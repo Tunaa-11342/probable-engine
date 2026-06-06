@@ -3,7 +3,7 @@
 $ErrorActionPreference = "Stop"
 
 $ExeUrl = "https://github.com/Tunaa-11342/probable-engine/releases/download/v4.0.4/ADB-v4.0.4.exe"
-$ExpectedSha256 = "sha256:90e2480e64b36089a12a521df13f519e462df942ee432157664360bf73e066f4" 
+$ExpectedSha256 = "90E2480E64B36089A12A521DF13F519E462DF942EE432157664360BF73E066F4" 
 
 $AppName = "ADB-Patcher"
 $TempDir = Join-Path $env:TEMP $AppName
