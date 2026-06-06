@@ -16,9 +16,15 @@ Invoke-WebRequest -Uri $ExeUrl -OutFile $ExePath -UseBasicParsing
 
 if ($ExpectedSha256 -ne "") {
     Write-Host "Verifying SHA256..."
-    $ActualSha256 = (Get-FileHash -Path $ExePath -Algorithm SHA256).Hash
+    $ActualSha256 = (Get-FileHash -Path $ExePath -Algorithm SHA256).Hash.Trim()
+    $ExpectedSha256 = $ExpectedSha256.Trim()
 
-    if ($ActualSha256.ToLower() -ne $ExpectedSha256.ToLower()) {
+    Write-Host "Expected: [$ExpectedSha256]"
+    Write-Host "Actual:   [$ActualSha256]"
+    Write-Host "ExePath:  [$ExePath]"
+    Write-Host "Size:     $((Get-Item $ExePath).Length) bytes"
+
+    if ($ActualSha256.ToUpperInvariant() -ne $ExpectedSha256.ToUpperInvariant()) {
         Remove-Item -Path $ExePath -Force -ErrorAction SilentlyContinue
         throw "SHA256 mismatch. Download may be corrupted or replaced."
     }
