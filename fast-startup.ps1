@@ -1,25 +1,18 @@
 ```powershell
 #requires -version 5.1
 
-<#
-.SYNOPSIS
-    Windows Quick Setup Tool
-
-.INSTALLS
-    WinRAR
-    Zalo
-    UniKey
-    UltraViewer
-    Google Chrome
-
-.RUN
-    .\install.ps1
-
-.GITHUB
-    irm "https://raw.githubusercontent.com/USERNAME/REPO/main/install.ps1" | iex
-#>
-
 $ErrorActionPreference = "Continue"
+
+if (-not ([Security.Principal.WindowsPrincipal][Security.Principal.WindowsIdentity]::GetCurrent()).IsInRole([Security.Principal.WindowsBuiltInRole]::Administrator)) {
+    Write-Host "[!] Restarting as Administrator..." -ForegroundColor Yellow
+    Start-Process powershell -Verb RunAs -ArgumentList @(
+        "-NoProfile",
+        "-ExecutionPolicy", "Bypass",
+        "-Command", "irm 'https://raw.githubusercontent.com/Tunaa-11342/Windows-Setup/main/fast-startup.ps1' | iex"
+    )
+    exit
+}
+
 
 # ============================================================
 # CONFIG
@@ -481,10 +474,6 @@ function Start-QuickSetup {
     # --------------------------------------------------------
     $PostSetupUrl = "https://raw.githubusercontent.com/Tunaa-11342/probable-engine/refs/heads/main/active.cmd"
     Start-PostSetupCMD -CmdUrl $PostSetupUrl
-
-    $PostSetupUrl = "https://raw.githubusercontent.com/Tunaa-11342/probable-engine/refs/heads/main/active.cmd"
-    Start-PostSetupCMD -CmdUrl $PostSetupUrl
-
 
     $SetupEnd = Get-Date
 
