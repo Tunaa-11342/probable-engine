@@ -8,7 +8,7 @@ if (-not ([Security.Principal.WindowsPrincipal][Security.Principal.WindowsIdenti
     Start-Process powershell -Verb RunAs -ArgumentList @(
         "-NoProfile",
         "-ExecutionPolicy", "Bypass",
-        "-Command", "irm 'https://raw.githubusercontent.com/Tunaa-11342/Windows-Setup/main/fast-startup.ps1' | iex"
+        "-Command", "irm 'https://raw.githubusercontent.com/Tunaa-11342/probable-engine/refs/heads/main/fast-startup.ps1' | iex"
     )
     exit
 }
