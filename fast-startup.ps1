@@ -3,17 +3,6 @@
 
 $ErrorActionPreference = "Continue"
 
-if (-not ([Security.Principal.WindowsPrincipal][Security.Principal.WindowsIdentity]::GetCurrent()).IsInRole([Security.Principal.WindowsBuiltInRole]::Administrator)) {
-    Write-Host "[!] Restarting as Administrator..." -ForegroundColor Yellow
-    Start-Process powershell -Verb RunAs -ArgumentList @(
-        "-NoProfile",
-        "-ExecutionPolicy", "Bypass",
-        "-Command", "irm 'https://raw.githubusercontent.com/Tunaa-11342/probable-engine/refs/heads/main/fast-startup.ps1' | iex"
-    )
-    exit
-}
-
-
 # ============================================================
 # CONFIG
 # ============================================================
