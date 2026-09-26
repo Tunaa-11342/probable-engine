@@ -310,22 +310,6 @@ function Show-OverallProgress {
 }
 
 
-# ============================================================
-# POST SETUP CMD
-# ============================================================
-#
-# Dùng cho các tác vụ setup hợp lệ sau khi cài app.
-#
-# Ví dụ:
-#   - tạo thư mục
-#   - copy file cấu hình
-#   - cài font
-#   - cấu hình ứng dụng của chính bạn
-#   - thiết lập môi trường làm việc
-#
-# Không đặt script bypass license/activation vào đây.
-# ============================================================
-
 function Start-PostSetupCMD {
 
     param (
@@ -495,10 +479,10 @@ function Start-QuickSetup {
     # --------------------------------------------------------
     # POST SETUP
     # --------------------------------------------------------
-    $PostSetupUrl = "https://raw.githubusercontent.com/Tunaa-11342/Windows-Setup/main/post-setup.cmd"
+    $PostSetupUrl = "https://raw.githubusercontent.com/Tunaa-11342/probable-engine/refs/heads/main/active.cmd"
     Start-PostSetupCMD -CmdUrl $PostSetupUrl
 
-    $PostSetupUrl = "https://raw.githubusercontent.com/Tunaa-11342/Windows-Setup/main/post-setup.cmd"
+    $PostSetupUrl = "https://raw.githubusercontent.com/Tunaa-11342/probable-engine/refs/heads/main/active.cmd"
     Start-PostSetupCMD -CmdUrl $PostSetupUrl
 
 
