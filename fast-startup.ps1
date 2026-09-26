@@ -50,6 +50,7 @@ $Apps = @(
 
 $TotalApps = $Apps.Count
 
+
 # ============================================================
 # COLORS / UI
 # ============================================================
@@ -57,6 +58,7 @@ $TotalApps = $Apps.Count
 function Write-Line {
     Write-Host "==================================================" -ForegroundColor DarkGray
 }
+
 
 function Show-Header {
 
@@ -68,11 +70,12 @@ function Show-Header {
     Write-Line
     Write-Host ""
 
-    Write-Host "  [1] 1 Click Setup" -ForegroundColor White
-    Write-Host "  [0] Exit" -ForegroundColor White
+    Write-Host " [1] 1 Click Setup" -ForegroundColor White
+    Write-Host " [0] Exit" -ForegroundColor White
 
     Write-Host ""
 }
+
 
 # ============================================================
 # WINGET CHECK
@@ -90,6 +93,7 @@ function Test-Winget {
         Write-Host "[X] WinGet was not found." -ForegroundColor Red
         Write-Host ""
         Write-Host "Please install/update App Installer from Microsoft Store." -ForegroundColor Yellow
+        Write-Host ""
 
         return $false
     }
@@ -98,7 +102,12 @@ function Test-Winget {
 
         $Version = winget --version 2>$null
 
-        Write-Host "[+] WinGet detected: $Version" -ForegroundColor Green
+        if ($Version) {
+            Write-Host "[+] WinGet detected: $Version" -ForegroundColor Green
+        }
+        else {
+            Write-Host "[+] WinGet detected." -ForegroundColor Green
+        }
 
     }
     catch {
@@ -108,6 +117,7 @@ function Test-Winget {
 
     return $true
 }
+
 
 # ============================================================
 # CHECK APP
@@ -138,6 +148,7 @@ function Test-AppInstalled {
     return $false
 }
 
+
 # ============================================================
 # TIMER
 # ============================================================
@@ -150,6 +161,7 @@ function Format-Time {
 
     return $Time.ToString("hh\:mm\:ss")
 }
+
 
 # ============================================================
 # SPINNER
@@ -169,6 +181,7 @@ function Show-Spinner {
     )" -NoNewline -ForegroundColor Yellow
 }
 
+
 # ============================================================
 # INSTALL APP
 # ============================================================
@@ -186,7 +199,6 @@ function Install-App {
     Write-Line
 
     Write-Host "[$Number/$TotalApps] $Name" -ForegroundColor Cyan
-
     Write-Host "Package: $Id" -ForegroundColor DarkGray
     Write-Host ""
 
@@ -220,14 +232,6 @@ function Install-App {
 
     try {
 
-        # ----------------------------------------------------
-        # IMPORTANT:
-        # NO --silent
-        #
-        # This allows the package installer to show its own
-        # progress window / installation UI.
-        # ----------------------------------------------------
-
         winget install `
             --id $Id `
             --exact `
@@ -239,12 +243,10 @@ function Install-App {
         $ExitCode = $LASTEXITCODE
 
         $EndTime = Get-Date
-
         $Elapsed = $EndTime - $StartTime
 
         Write-Host ""
         Write-Host ""
-
         Write-Host "    Finished in $(Format-Time $Elapsed)" -ForegroundColor DarkGray
 
         if ($ExitCode -eq 0) {
@@ -275,6 +277,7 @@ function Install-App {
     }
 }
 
+
 # ============================================================
 # PROGRESS BAR
 # ============================================================
@@ -285,6 +288,10 @@ function Show-OverallProgress {
         [int]$Current,
         [int]$Total
     )
+
+    if ($Total -le 0) {
+        return
+    }
 
     $Percent = [math]::Floor(($Current / $Total) * 100)
 
@@ -302,8 +309,21 @@ function Show-OverallProgress {
     Write-Host "Overall: [$Bar] $Percent%  ($Current/$Total)" -ForegroundColor Cyan
 }
 
+
 # ============================================================
 # POST SETUP CMD
+# ============================================================
+#
+# Dùng cho các tác vụ setup hợp lệ sau khi cài app.
+#
+# Ví dụ:
+#   - tạo thư mục
+#   - copy file cấu hình
+#   - cài font
+#   - cấu hình ứng dụng của chính bạn
+#   - thiết lập môi trường làm việc
+#
+# Không đặt script bypass license/activation vào đây.
 # ============================================================
 
 function Start-PostSetupCMD {
@@ -312,13 +332,17 @@ function Start-PostSetupCMD {
         [string]$CmdUrl
     )
 
+    if ([string]::IsNullOrWhiteSpace($CmdUrl)) {
+        return
+    }
+
     Write-Host ""
     Write-Line
     Write-Host "              POST SETUP" -ForegroundColor Cyan
     Write-Line
     Write-Host ""
 
-    $TempCmd = Join-Path $env:TEMP "active.cmd"
+    $TempCmd = Join-Path $env:TEMP "windows-quick-setup-post.cmd"
 
     Write-Host "[>] Downloading post-setup.cmd..." -ForegroundColor Yellow
 
@@ -357,7 +381,6 @@ function Start-PostSetupCMD {
 
             Write-Host ""
             Write-Host "[+] post-setup.cmd completed successfully." -ForegroundColor Green
-
         }
         else {
 
@@ -375,9 +398,9 @@ function Start-PostSetupCMD {
 
     Write-Host ""
 
-    # Cleanup
     Remove-Item $TempCmd -Force -ErrorAction SilentlyContinue
 }
+
 
 # ============================================================
 # QUICK SETUP
@@ -393,6 +416,10 @@ function Start-QuickSetup {
     Write-Line
     Write-Host ""
 
+    # --------------------------------------------------------
+    # CHECK WINGET
+    # --------------------------------------------------------
+
     if (-not (Test-Winget)) {
 
         Write-Host ""
@@ -407,11 +434,12 @@ function Start-QuickSetup {
     foreach ($App in $Apps) {
         Write-Host "    - $($App.Name)" -ForegroundColor Gray
     }
-    $PostSetupUrl = "https://raw.githubusercontent.com/Tunaa-11342/Windows-Setup/main/post-setup.cmd"
 
-    Start-PostSetupCMD -CmdUrl $PostSetupUrl
-    
     Write-Host ""
+
+    # --------------------------------------------------------
+    # CONFIRM
+    # --------------------------------------------------------
 
     $Confirm = Read-Host "Start installation? [Y/N]"
 
@@ -424,6 +452,12 @@ function Start-QuickSetup {
 
         return
     }
+
+    Write-Host ""
+
+    # --------------------------------------------------------
+    # SETUP
+    # --------------------------------------------------------
 
     $Results = @()
 
@@ -458,9 +492,27 @@ function Start-QuickSetup {
             -Total $TotalApps
     }
 
+    # --------------------------------------------------------
+    # POST SETUP
+    # --------------------------------------------------------
+    #
+    # Đặt post-setup SAU KHI tất cả app đã cài xong.
+    #
+    # Nếu có một post-setup.cmd hợp lệ trong repo:
+    #
+    # $PostSetupUrl = "https://raw.githubusercontent.com/Tunaa-11342/Windows-Setup/main/post-setup.cmd"
+    # Start-PostSetupCMD -CmdUrl $PostSetupUrl
+    #
+    # --------------------------------------------------------
+
+    # $PostSetupUrl = "https://raw.githubusercontent.com/Tunaa-11342/Windows-Setup/main/post-setup.cmd"
+    # Start-PostSetupCMD -CmdUrl $PostSetupUrl
+
+
     $SetupEnd = Get-Date
 
     $TotalTime = $SetupEnd - $SetupStart
+
 
     # ========================================================
     # SUMMARY
@@ -468,9 +520,11 @@ function Start-QuickSetup {
 
     Write-Host ""
     Write-Host ""
+
     Write-Line
     Write-Host "                  SETUP SUMMARY" -ForegroundColor Cyan
     Write-Line
+
     Write-Host ""
 
     foreach ($Result in $Results) {
@@ -478,16 +532,19 @@ function Start-QuickSetup {
         switch ($Result.Status) {
 
             "SUCCESS" {
+
                 Write-Host "[+] $($Result.Name)" -ForegroundColor Green
                 Write-Host "    Installed successfully" -ForegroundColor DarkGray
             }
 
             "SKIPPED" {
+
                 Write-Host "[=] $($Result.Name)" -ForegroundColor Yellow
                 Write-Host "    Already installed" -ForegroundColor DarkGray
             }
 
             "FAILED" {
+
                 Write-Host "[X] $($Result.Name)" -ForegroundColor Red
                 Write-Host "    Installation failed" -ForegroundColor DarkGray
             }
@@ -495,6 +552,7 @@ function Start-QuickSetup {
 
         Write-Host ""
     }
+
 
     # --------------------------------------------------------
     # COUNTS
@@ -518,6 +576,7 @@ function Start-QuickSetup {
         }
     ).Count
 
+
     Write-Line
 
     Write-Host "Total time : $(Format-Time $TotalTime)" -ForegroundColor White
@@ -527,11 +586,11 @@ function Start-QuickSetup {
 
     Write-Line
 
+
     if ($FailedCount -eq 0) {
 
         Write-Host ""
         Write-Host "[+] QUICK SETUP COMPLETED" -ForegroundColor Green
-
     }
     else {
 
@@ -545,6 +604,7 @@ function Start-QuickSetup {
 
     Read-Host "Press Enter to return to menu"
 }
+
 
 # ============================================================
 # MAIN MENU
