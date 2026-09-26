@@ -62,41 +62,106 @@ function Show-Header {
 # WINGET CHECK
 # ============================================================
 
-function Test-Winget {
+function Ensure-Winget {
 
-    Write-Host "[*] Checking WinGet..." -ForegroundColor Yellow
-
+    # --------------------------------------------------------
+    # Đã có sẵn?
+    # --------------------------------------------------------
     $Winget = Get-Command winget -ErrorAction SilentlyContinue
 
-    if ($null -eq $Winget) {
-
-        Write-Host ""
-        Write-Host "[X] WinGet was not found." -ForegroundColor Red
-        Write-Host ""
-        Write-Host "Please install/update App Installer from Microsoft Store." -ForegroundColor Yellow
-        Write-Host ""
-
-        return $false
+    if ($Winget) {
+        return $true
     }
+
+    # --------------------------------------------------------
+    # Chưa có → tự cài từ GitHub (Microsoft.WinGet.Client)
+    # --------------------------------------------------------
+    Write-Host "[!] WinGet not found. Installing automatically..." -ForegroundColor Yellow
+    Write-Host ""
 
     try {
 
-        $Version = winget --version 2>$null
-
-        if ($Version) {
-            Write-Host "[+] WinGet detected: $Version" -ForegroundColor Green
-        }
-        else {
-            Write-Host "[+] WinGet detected." -ForegroundColor Green
+        # Cách 1: dùng Microsoft.WinGet.Client qua PowerShell Gallery
+        # (nhanh, gọn, không cần Store)
+        if (-not (Get-PackageProvider -Name NuGet -ErrorAction SilentlyContinue)) {
+            Install-PackageProvider -Name NuGet -Force -Scope CurrentUser | Out-Null
         }
 
+        Set-PSRepository -Name PSGallery -InstallationPolicy Trusted -ErrorAction SilentlyContinue
+
+        Install-Module -Name Microsoft.WinGet.Client -Force -Scope CurrentUser -AllowClobber -ErrorAction Stop
+
+        Import-Module Microsoft.WinGet.Client -ErrorAction Stop
+
+        # Cài winget CLI
+        Repair-WinGetPackageManager -AllUsers -Force -ErrorAction Stop
+
+        Write-Host "[+] WinGet installed." -ForegroundColor Green
+        Write-Host ""
+
+        # Refresh PATH để nhận winget mới
+        $env:Path = [System.Environment]::GetEnvironmentVariable("Path","Machine") + ";" + [System.Environment]::GetEnvironmentVariable("Path","User")
+
+        if (Get-Command winget -ErrorAction SilentlyContinue) {
+            return $true
+        }
     }
     catch {
 
-        Write-Host "[+] WinGet detected." -ForegroundColor Green
+        Write-Host "[!] Auto-install via PSGallery failed: $($_.Exception.Message)" -ForegroundColor DarkYellow
+        Write-Host ""
     }
 
-    return $true
+    # --------------------------------------------------------
+    # Fallback: tải .msixbundle từ GitHub release
+    # --------------------------------------------------------
+    try {
+
+        Write-Host "[>] Trying fallback: download App Installer from GitHub..." -ForegroundColor Yellow
+
+        $ApiUrl = "https://api.github.com/repos/microsoft/winget-cli/releases/latest"
+
+        $Release = Invoke-RestMethod -Uri $ApiUrl -UseBasicParsing -ErrorAction Stop
+
+        $Asset = $Release.assets |
+            Where-Object { $_.name -like "*.msixbundle" } |
+            Select-Object -First 1
+
+        if (-not $Asset) {
+            throw "No .msixbundle asset found in latest release."
+        }
+
+        $Msix = Join-Path $env:TEMP "winget.msixbundle"
+
+        Invoke-WebRequest -Uri $Asset.browser_download_url -OutFile $Msix -UseBasicParsing -ErrorAction Stop
+
+        Add-AppxPackage -Path $Msix -ErrorAction Stop
+
+        Remove-Item $Msix -Force -ErrorAction SilentlyContinue
+
+        Write-Host "[+] WinGet installed via MSIX." -ForegroundColor Green
+        Write-Host ""
+
+        $env:Path = [System.Environment]::GetEnvironmentVariable("Path","Machine") + ";" + [System.Environment]::GetEnvironmentVariable("Path","User")
+
+        if (Get-Command winget -ErrorAction SilentlyContinue) {
+            return $true
+        }
+    }
+    catch {
+
+        Write-Host "[X] Fallback install failed: $($_.Exception.Message)" -ForegroundColor Red
+    }
+
+    # --------------------------------------------------------
+    # Hết cách → báo lỗi
+    # --------------------------------------------------------
+    Write-Host ""
+    Write-Host "[X] Could not install WinGet automatically." -ForegroundColor Red
+    Write-Host "    Please install 'App Installer' from Microsoft Store manually." -ForegroundColor Yellow
+    Write-Host ""
+
+    return $false
 }
 
 
@@ -385,7 +450,7 @@ function Start-QuickSetup {
     # CHECK WINGET
     # --------------------------------------------------------
 
-    if (-not (Test-Winget)) {
+    if (-not (Ensure-Winget)) {
 
         Write-Host ""
         Read-Host "Press Enter to return"
