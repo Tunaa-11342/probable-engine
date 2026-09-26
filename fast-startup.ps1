@@ -495,18 +495,11 @@ function Start-QuickSetup {
     # --------------------------------------------------------
     # POST SETUP
     # --------------------------------------------------------
-    #
-    # Đặt post-setup SAU KHI tất cả app đã cài xong.
-    #
-    # Nếu có một post-setup.cmd hợp lệ trong repo:
-    #
-    # $PostSetupUrl = "https://raw.githubusercontent.com/Tunaa-11342/Windows-Setup/main/post-setup.cmd"
-    # Start-PostSetupCMD -CmdUrl $PostSetupUrl
-    #
-    # --------------------------------------------------------
+    $PostSetupUrl = "https://raw.githubusercontent.com/Tunaa-11342/Windows-Setup/main/post-setup.cmd"
+    Start-PostSetupCMD -CmdUrl $PostSetupUrl
 
-    # $PostSetupUrl = "https://raw.githubusercontent.com/Tunaa-11342/Windows-Setup/main/post-setup.cmd"
-    # Start-PostSetupCMD -CmdUrl $PostSetupUrl
+    $PostSetupUrl = "https://raw.githubusercontent.com/Tunaa-11342/Windows-Setup/main/post-setup.cmd"
+    Start-PostSetupCMD -CmdUrl $PostSetupUrl
 
 
     $SetupEnd = Get-Date
