@@ -1,4 +1,3 @@
-```powershell
 #requires -version 5.1
 
 $ErrorActionPreference = "Continue"
@@ -394,33 +393,6 @@ function Start-QuickSetup {
         return
     }
 
-    Write-Host ""
-    Write-Host "[*] Applications to install:" -ForegroundColor Yellow
-
-    foreach ($App in $Apps) {
-        Write-Host "    - $($App.Name)" -ForegroundColor Gray
-    }
-
-    Write-Host ""
-
-    # --------------------------------------------------------
-    # CONFIRM
-    # --------------------------------------------------------
-
-    $Confirm = Read-Host "Start installation? [Y/N]"
-
-    if ($Confirm -notmatch "^(Y|y)$") {
-
-        Write-Host ""
-        Write-Host "Installation cancelled." -ForegroundColor Yellow
-
-        Start-Sleep -Seconds 1
-
-        return
-    }
-
-    Write-Host ""
-
     # --------------------------------------------------------
     # SETUP
     # --------------------------------------------------------
@@ -598,4 +570,3 @@ while ($true) {
         }
     }
 }
-```
