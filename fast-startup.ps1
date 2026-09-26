@@ -303,90 +303,6 @@ function Show-OverallProgress {
 }
 
 # ============================================================
-# QUICK SETUP
-# ============================================================
-
-function Start-QuickSetup {
-
-    Clear-Host
-
-    Write-Host ""
-    Write-Line
-    Write-Host "              QUICK SETUP STARTED" -ForegroundColor Cyan
-    Write-Line
-    Write-Host ""
-
-    if (-not (Test-Winget)) {
-
-        Write-Host ""
-        Read-Host "Press Enter to return"
-
-        return
-    }
-
-    Write-Host ""
-    Write-Host "[*] Applications to install:" -ForegroundColor Yellow
-
-    foreach ($App in $Apps) {
-        Write-Host "    - $($App.Name)" -ForegroundColor Gray
-    }
-    $PostSetupUrl = "https://raw.githubusercontent.com/Tunaa-11342/Windows-Setup/main/post-setup.cmd"
-
-    Start-PostSetupCMD -CmdUrl $PostSetupUrl
-    Write-Host ""
-
-    $Confirm = Read-Host "Start installation? [Y/N]"
-
-    if ($Confirm -notmatch "^(Y|y)$") {
-
-        Write-Host ""
-        Write-Host "Installation cancelled." -ForegroundColor Yellow
-
-        Start-Sleep -Seconds 1
-
-        return
-    }
-
-    $Results = @()
-
-    $Current = 0
-
-    $SetupStart = Get-Date
-
-    # --------------------------------------------------------
-    # INSTALL EACH APP
-    # --------------------------------------------------------
-
-    foreach ($App in $Apps) {
-
-        $Current++
-
-        Show-OverallProgress `
-            -Current ($Current - 1) `
-            -Total $TotalApps
-
-        $Status = Install-App `
-            -Name $App.Name `
-            -Id $App.Id `
-            -Number $Current
-
-        $Results += [PSCustomObject]@{
-            Name   = $App.Name
-            Status = $Status
-        }
-
-        Show-OverallProgress `
-            -Current $Current `
-            -Total $TotalApps
-    }
-
-    $SetupEnd = Get-Date
-
-    $TotalTime = $SetupEnd - $SetupStart
-
-
-
-# ============================================================
 # POST SETUP CMD
 # ============================================================
 
@@ -462,6 +378,89 @@ function Start-PostSetupCMD {
     # Cleanup
     Remove-Item $TempCmd -Force -ErrorAction SilentlyContinue
 }
+
+# ============================================================
+# QUICK SETUP
+# ============================================================
+
+function Start-QuickSetup {
+
+    Clear-Host
+
+    Write-Host ""
+    Write-Line
+    Write-Host "              QUICK SETUP STARTED" -ForegroundColor Cyan
+    Write-Line
+    Write-Host ""
+
+    if (-not (Test-Winget)) {
+
+        Write-Host ""
+        Read-Host "Press Enter to return"
+
+        return
+    }
+
+    Write-Host ""
+    Write-Host "[*] Applications to install:" -ForegroundColor Yellow
+
+    foreach ($App in $Apps) {
+        Write-Host "    - $($App.Name)" -ForegroundColor Gray
+    }
+    $PostSetupUrl = "https://raw.githubusercontent.com/Tunaa-11342/Windows-Setup/main/post-setup.cmd"
+
+    Start-PostSetupCMD -CmdUrl $PostSetupUrl
+    
+    Write-Host ""
+
+    $Confirm = Read-Host "Start installation? [Y/N]"
+
+    if ($Confirm -notmatch "^(Y|y)$") {
+
+        Write-Host ""
+        Write-Host "Installation cancelled." -ForegroundColor Yellow
+
+        Start-Sleep -Seconds 1
+
+        return
+    }
+
+    $Results = @()
+
+    $Current = 0
+
+    $SetupStart = Get-Date
+
+    # --------------------------------------------------------
+    # INSTALL EACH APP
+    # --------------------------------------------------------
+
+    foreach ($App in $Apps) {
+
+        $Current++
+
+        Show-OverallProgress `
+            -Current ($Current - 1) `
+            -Total $TotalApps
+
+        $Status = Install-App `
+            -Name $App.Name `
+            -Id $App.Id `
+            -Number $Current
+
+        $Results += [PSCustomObject]@{
+            Name   = $App.Name
+            Status = $Status
+        }
+
+        Show-OverallProgress `
+            -Current $Current `
+            -Total $TotalApps
+    }
+
+    $SetupEnd = Get-Date
+
+    $TotalTime = $SetupEnd - $SetupStart
 
     # ========================================================
     # SUMMARY
