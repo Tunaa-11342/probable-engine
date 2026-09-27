@@ -9,44 +9,44 @@ $ErrorActionPreference = "Continue"
 $DownloadRoot = Join-Path $env:LOCALAPPDATA "WindowsQuickSetup"
 $UniKeyDir    = Join-Path $DownloadRoot "UniKey"
 
+# ---- GitHub Releases base URL ----
+$GhBase = "https://github.com/Tunaa-11342/probable-engine/releases/download/v5.0.5"
+
 $Apps = @(
     @{
         Name     = "WinRAR"
         Type     = "exe"
-        # Link từ WinRAR.es (hướng dẫn PowerShell chính thức), còn sống
-        Url      = "https://www.rarlab.com/rar/winrar-x64-712es.exe"
+        Url      = "$GhBase/winrar-x64-723.exe"
         Args     = "/S"
         RegName  = "WinRAR"
     },
     @{
         Name     = "Zalo"
         Type     = "exe"
-        Url      = "https://zalo.me/pc"
+        Url      = "$GhBase/ZaloSetup-26.9.10.exe"
         Args     = "/S"
         RegName  = "Zalo"
     },
     @{
         Name     = "UniKey"
-        Type     = "portable"
-        Url      = "https://www.unikey.org/assets/release/unikey46RC2-230919-win64.zip"
+        Type     = "exe-portable"   # ← tải exe trực tiếp, không cài, tạo shortcut
+        Url      = "$GhBase/UniKeyNT.exe"
         ExeName  = "UniKeyNT.exe"
         RegName  = "UniKey"
-        DesktopShortcut = $true
+        DesktopShortcut    = $true
         StartupWithWindows = $true
     },
     @{
         Name     = "UltraViewer"
         Type     = "exe"
-        # Link tải trực tiếp từ ultraviewer.net, ổn định
-        Url      = "https://www.ultraviewer.net/download/UltraViewer_setup_6.6.124_vi.exe"
+        Url      = "$GhBase/UltraViewer_setup_6.6.133_vi.exe"
         Args     = "/S"
         RegName  = "UltraViewer"
     },
     @{
         Name     = "Google Chrome"
         Type     = "exe"
-        # Link Chrome standalone offline installer, chính thức
-        Url      = "https://dl.google.com/chrome/install/standalone/ChromeStandaloneSetup64.exe"
+        Url      = "$GhBase/ChromeSetup.exe"
         Args     = "/silent /install"
         RegName  = "Google Chrome"
     }
@@ -178,46 +178,32 @@ function Install-App {
     Write-Host "[+] Not installed." -ForegroundColor Gray
     Write-Host ""
 
-    # ---------- PORTABLE (UniKey) ----------
-    if ($App.Type -eq "portable") {
+    # ---------- EXE-PORTABLE (UniKey) ----------
+    if ($App.Type -eq "exe-portable") {
         try {
             if (-not (Test-Path $UniKeyDir)) {
                 New-Item -ItemType Directory -Path $UniKeyDir -Force | Out-Null
             }
 
-            $ZipPath = Join-Path $env:TEMP "$($App.Name).zip"
+            $ExePath = Join-Path $UniKeyDir $App.ExeName
 
             Write-Host "[>] Downloading $($App.Name)..." -ForegroundColor Cyan
-            Invoke-WebRequest -Uri $App.Url -OutFile $ZipPath -UseBasicParsing -ErrorAction Stop
+            Invoke-WebRequest -Uri $App.Url -OutFile $ExePath -UseBasicParsing -ErrorAction Stop
 
-            Write-Host "[>] Extracting..." -ForegroundColor Cyan
-            Expand-Archive -Path $ZipPath -DestinationPath $UniKeyDir -Force -ErrorAction Stop
-            Remove-Item $ZipPath -Force -ErrorAction SilentlyContinue
-
-            $Exe = Get-ChildItem -Path $UniKeyDir -Filter $App.ExeName -Recurse -ErrorAction SilentlyContinue |
-                   Select-Object -First 1
-
-            if (-not $Exe) {
-                throw "Không tìm thấy $($App.ExeName) sau khi giải nén."
-            }
-
-            $ExePath = $Exe.FullName
-            $ExeDir  = $Exe.DirectoryName
-
-            Write-Host "[+] Extracted to: $ExePath" -ForegroundColor Green
+            Write-Host "[+] Saved to: $ExePath" -ForegroundColor Green
 
             if ($App.DesktopShortcut) {
-                $lnk = New-DesktopShortcut -TargetPath $ExePath -ShortcutName $App.Name -WorkingDir $ExeDir
+                $lnk = New-DesktopShortcut -TargetPath $ExePath -ShortcutName $App.Name -WorkingDir $UniKeyDir
                 Write-Host "[+] Desktop shortcut: $lnk" -ForegroundColor Green
             }
 
             if ($App.StartupWithWindows) {
-                $lnk2 = Add-StartupShortcut -TargetPath $ExePath -ShortcutName $App.Name -WorkingDir $ExeDir
+                $lnk2 = Add-StartupShortcut -TargetPath $ExePath -ShortcutName $App.Name -WorkingDir $UniKeyDir
                 Write-Host "[+] Startup shortcut: $lnk2" -ForegroundColor Green
             }
 
             Write-Host "[>] Launching $($App.Name)..." -ForegroundColor Cyan
-            Start-Process -FilePath $ExePath -WorkingDirectory $ExeDir
+            Start-Process -FilePath $ExePath -WorkingDirectory $UniKeyDir
 
             Write-Host ""
             Write-Host "[+] $($App.Name) - SUCCESS (portable)" -ForegroundColor Green
