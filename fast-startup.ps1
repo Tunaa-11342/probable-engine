@@ -12,9 +12,8 @@ $UniKeyDir    = Join-Path $DownloadRoot "UniKey"
 # ---- GitHub Releases base URL (ONLINE) ----
 $GhBase = "https://github.com/Tunaa-11342/probable-engine/releases/download/v5.0.5"
 
-# ---- OFFLINE source folder (cùng thư mục với script) ----
-$ScriptDir   = Split-Path -Parent $MyInvocation.MyCommand.Path
-$OfflineDir  = Join-Path $ScriptDir "offline"
+# ---- OFFLINE: tên thư mục chứa bộ cài trên USB ----
+$OfflineFolderName = "app can cai"
 
 # Post-setup cmd (dùng cho cả online & offline)
 $PostSetupUrl = "https://raw.githubusercontent.com/Tunaa-11342/probable-engine/refs/heads/main/active.cmd"
@@ -31,14 +30,14 @@ $Apps = @(
     @{
         Name     = "Zalo"
         Type     = "exe"
-        FileName = "ZaloSetup-26.9.10.exe"
+        FileName = "ZaloSetup-26.8.20.exe"
         Url      = "$GhBase/ZaloSetup-26.9.10.exe"
         Args     = "/S"
         RegName  = "Zalo"
     },
     @{
         Name     = "UniKey"
-        Type     = "exe-portable"   # ← tải exe trực tiếp, không cài, tạo shortcut
+        Type     = "exe-portable"
         FileName = "UniKeyNT.exe"
         Url      = "$GhBase/UniKeyNT.exe"
         ExeName  = "UniKeyNT.exe"
@@ -65,6 +64,33 @@ $Apps = @(
 )
 
 $TotalApps = $Apps.Count
+
+
+# ============================================================
+# TÌM THƯ MỤC OFFLINE TRÊN USB (auto-detect ổ đĩa)
+# ============================================================
+
+function Find-OfflineDir {
+    param ([string]$FolderName)
+
+    # Quét D: -> Z:, bỏ qua C: (hệ thống)
+    $Drives = 68..90 | ForEach-Object { "$([char]$_)`:\" }
+
+    foreach ($Drive in $Drives) {
+        if (-not (Test-Path $Drive)) { continue }
+
+        $Candidate = Join-Path $Drive $FolderName
+        if (Test-Path $Candidate) {
+            # Xác nhận có ít nhất 1 file .exe trong đó
+            $HasExe = Get-ChildItem -Path $Candidate -Filter *.exe -ErrorAction SilentlyContinue |
+                      Select-Object -First 1
+            if ($HasExe) {
+                return $Candidate
+            }
+        }
+    }
+    return $null
+}
 
 
 # ============================================================
@@ -132,14 +158,14 @@ function New-DesktopShortcut {
         [string]$WorkingDir = ""
     )
 
-    $Desktop = [Environment]::GetFolderPath("Desktop")
-    $LnkPath = Join-Path $Desktop "$ShortcutName.lnk"
+    $Desktop  = [Environment]::GetFolderPath("Desktop")
+    $LnkPath  = Join-Path $Desktop "$ShortcutName.lnk"
 
     $WshShell = New-Object -ComObject WScript.Shell
     $Shortcut = $WshShell.CreateShortcut($LnkPath)
-    $Shortcut.TargetPath       = $TargetPath
+    $Shortcut.TargetPath   = $TargetPath
     if ($WorkingDir) { $Shortcut.WorkingDirectory = $WorkingDir }
-    $Shortcut.IconLocation     = "$TargetPath,0"
+    $Shortcut.IconLocation = "$TargetPath,0"
     $Shortcut.Save()
 
     return $LnkPath
@@ -152,8 +178,8 @@ function Add-StartupShortcut {
         [string]$WorkingDir = ""
     )
 
-    $Startup = [Environment]::GetFolderPath("Startup")
-    $LnkPath = Join-Path $Startup "$ShortcutName.lnk"
+    $Startup  = [Environment]::GetFolderPath("Startup")
+    $LnkPath  = Join-Path $Startup "$ShortcutName.lnk"
 
     $WshShell = New-Object -ComObject WScript.Shell
     $Shortcut = $WshShell.CreateShortcut($LnkPath)
@@ -173,13 +199,15 @@ function Install-App {
     param (
         [hashtable]$App,
         [int]$Number,
-        [switch]$Offline
+        [string]$OfflineSourceDir = ""   # rỗng = chạy online
     )
+
+    $IsOffline = -not [string]::IsNullOrWhiteSpace($OfflineSourceDir)
 
     Write-Host ""
     Write-Line
     Write-Host "[$Number/$TotalApps] $($App.Name)" -ForegroundColor Cyan
-    Write-Host "Type: $($App.Type)  |  Mode: $(if ($Offline) {'OFFLINE'} else {'ONLINE'})" -ForegroundColor DarkGray
+    Write-Host "Type: $($App.Type)  |  Mode: $(if ($IsOffline) {'OFFLINE'} else {'ONLINE'})" -ForegroundColor DarkGray
     Write-Host ""
 
     # ---------- CHECK ----------
@@ -201,19 +229,16 @@ function Install-App {
 
             $ExePath = Join-Path $UniKeyDir $App.ExeName
 
-            if ($Offline) {
-                # ---- Lấy từ USB ----
-                $SrcExe = Join-Path $OfflineDir $App.FileName
+            if ($IsOffline) {
+                $SrcExe = Join-Path $OfflineSourceDir $App.FileName
                 if (-not (Test-Path $SrcExe)) {
                     throw "Không tìm thấy file offline: $SrcExe"
                 }
-
                 Write-Host "[>] Copying $($App.Name) from USB..." -ForegroundColor Cyan
                 Copy-Item -Path $SrcExe -Destination $ExePath -Force
                 Write-Host "[+] Copied to: $ExePath" -ForegroundColor Green
             }
             else {
-                # ---- Download từ GitHub ----
                 Write-Host "[>] Downloading $($App.Name)..." -ForegroundColor Cyan
                 Invoke-WebRequest -Uri $App.Url -OutFile $ExePath -UseBasicParsing -ErrorAction Stop
                 Write-Host "[+] Saved to: $ExePath" -ForegroundColor Green
@@ -250,24 +275,21 @@ function Install-App {
     }
 
     $TempFileName = "$($App.Name -replace '\s','_')_setup.exe"
-    $FilePath = Join-Path $DownloadRoot $TempFileName
+    $FilePath     = Join-Path $DownloadRoot $TempFileName
 
     $StartTime = Get-Date
 
     try {
-        if ($Offline) {
-            # ---- Lấy từ USB ----
-            $SrcExe = Join-Path $OfflineDir $App.FileName
+        if ($IsOffline) {
+            $SrcExe = Join-Path $OfflineSourceDir $App.FileName
             if (-not (Test-Path $SrcExe)) {
                 throw "Không tìm thấy file offline: $SrcExe"
             }
-
             Write-Host "[>] Copying installer from USB..." -ForegroundColor Cyan
             Copy-Item -Path $SrcExe -Destination $FilePath -Force
             Write-Host "[+] Ready: $FilePath" -ForegroundColor Green
         }
         else {
-            # ---- Download từ GitHub ----
             Write-Host "[>] Downloading..." -ForegroundColor Cyan
             Invoke-WebRequest -Uri $App.Url -OutFile $FilePath -UseBasicParsing -ErrorAction Stop
         }
@@ -330,7 +352,7 @@ function Show-OverallProgress {
 
 
 # ============================================================
-# POST SETUP (dùng cho cả online & offline)
+# POST SETUP
 # ============================================================
 
 function Start-PostSetupCMD {
@@ -388,36 +410,43 @@ function Start-PostSetupCMD {
 function Start-QuickSetup {
     param ([switch]$Offline)
 
-    $ModeLabel = if ($Offline) { "OFFLINE (USB)" } else { "ONLINE (GitHub)" }
+    $OfflineSourceDir = ""
 
-    Clear-Host
-    Write-Host ""
-    Write-Line
-    Write-Host "              QUICK SETUP STARTED" -ForegroundColor Cyan
-    Write-Host "              Mode: $ModeLabel" -ForegroundColor Cyan
-    Write-Line
-    Write-Host ""
-
-    # ---- Kiểm tra thư mục offline ----
+    # ---------- Nếu Offline: tự dò thư mục trên USB ----------
     if ($Offline) {
-        if (-not (Test-Path $OfflineDir)) {
-            Write-Host "[X] Không tìm thấy thư mục offline:" -ForegroundColor Red
-            Write-Host "    $OfflineDir" -ForegroundColor Red
+        Clear-Host
+        Write-Host ""
+        Write-Line
+        Write-Host "         ĐANG TÌM BỘ CÀI TRÊN USB..." -ForegroundColor Cyan
+        Write-Line
+        Write-Host ""
+
+        $OfflineSourceDir = Find-OfflineDir -FolderName $OfflineFolderName
+
+        if (-not $OfflineSourceDir) {
+            Write-Host "[X] Không tìm thấy thư mục '$OfflineFolderName' trên ổ đĩa nào (D: -> Z:)." -ForegroundColor Red
             Write-Host ""
-            Write-Host "Hãy tạo thư mục 'offline' cạnh file script và đặt các file cài vào đó." -ForegroundColor Yellow
+            Write-Host "Kiểm tra lại:" -ForegroundColor Yellow
+            Write-Host "  - USB đã cắm chưa?" -ForegroundColor Yellow
+            Write-Host "  - Thư mục tên đúng '$OfflineFolderName' chưa?" -ForegroundColor Yellow
+            Write-Host "  - Trong thư mục có file .exe không?" -ForegroundColor Yellow
             Write-Host ""
             Read-Host "Press Enter to return to menu"
             return
         }
 
+        Write-Host "[+] Tìm thấy: $OfflineSourceDir" -ForegroundColor Green
+        Start-Sleep -Milliseconds 800
+
         # Kiểm tra sơ bộ các file cần thiết
         $Missing = @()
         foreach ($App in $Apps) {
-            $Src = Join-Path $OfflineDir $App.FileName
+            $Src = Join-Path $OfflineSourceDir $App.FileName
             if (-not (Test-Path $Src)) { $Missing += $App.FileName }
         }
 
         if ($Missing.Count -gt 0) {
+            Write-Host ""
             Write-Host "[!] Các file sau không tìm thấy trong thư mục offline:" -ForegroundColor Yellow
             foreach ($m in $Missing) {
                 Write-Host "    - $m" -ForegroundColor Yellow
@@ -426,9 +455,21 @@ function Start-QuickSetup {
             Write-Host "Vẫn tiếp tục? Những app thiếu file sẽ bị đánh dấu FAILED." -ForegroundColor Yellow
             $confirm = Read-Host "Tiếp tục? (y/n)"
             if ($confirm -notmatch '^[yY]') { return }
-            Write-Host ""
         }
     }
+
+    $ModeLabel = if ($Offline) { "OFFLINE (USB)" } else { "ONLINE (GitHub)" }
+
+    Clear-Host
+    Write-Host ""
+    Write-Line
+    Write-Host "              QUICK SETUP STARTED" -ForegroundColor Cyan
+    Write-Host "              Mode: $ModeLabel" -ForegroundColor Cyan
+    if ($Offline) {
+        Write-Host "              Source: $OfflineSourceDir" -ForegroundColor DarkGray
+    }
+    Write-Line
+    Write-Host ""
 
     $Results    = @()
     $Current    = 0
@@ -437,12 +478,12 @@ function Start-QuickSetup {
     foreach ($App in $Apps) {
         $Current++
         Show-OverallProgress -Current ($Current - 1) -Total $TotalApps
-        $Status = Install-App -App $App -Number $Current -Offline:$Offline
+        $Status = Install-App -App $App -Number $Current -OfflineSourceDir $OfflineSourceDir
         $Results += [PSCustomObject]@{ Name = $App.Name; Status = $Status }
         Show-OverallProgress -Current $Current -Total $TotalApps
     }
 
-    # ---- POST SETUP (luôn chạy, online hay offline đều tải active.cmd) ----
+    # ---- POST SETUP (luôn tải active.cmd từ GitHub) ----
     Start-PostSetupCMD -CmdUrl $PostSetupUrl
 
     $SetupEnd  = Get-Date
