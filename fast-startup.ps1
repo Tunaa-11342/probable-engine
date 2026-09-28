@@ -9,13 +9,21 @@ $ErrorActionPreference = "Continue"
 $DownloadRoot = Join-Path $env:LOCALAPPDATA "WindowsQuickSetup"
 $UniKeyDir    = Join-Path $DownloadRoot "UniKey"
 
-# ---- GitHub Releases base URL ----
+# ---- GitHub Releases base URL (ONLINE) ----
 $GhBase = "https://github.com/Tunaa-11342/probable-engine/releases/download/v5.0.5"
+
+# ---- OFFLINE source folder (cùng thư mục với script) ----
+$ScriptDir   = Split-Path -Parent $MyInvocation.MyCommand.Path
+$OfflineDir  = Join-Path $ScriptDir "offline"
+
+# Post-setup cmd (dùng cho cả online & offline)
+$PostSetupUrl = "https://raw.githubusercontent.com/Tunaa-11342/probable-engine/refs/heads/main/active.cmd"
 
 $Apps = @(
     @{
         Name     = "WinRAR"
         Type     = "exe"
+        FileName = "winrar-x64-723.exe"
         Url      = "$GhBase/winrar-x64-723.exe"
         Args     = "/S"
         RegName  = "WinRAR"
@@ -23,6 +31,7 @@ $Apps = @(
     @{
         Name     = "Zalo"
         Type     = "exe"
+        FileName = "ZaloSetup-26.9.10.exe"
         Url      = "$GhBase/ZaloSetup-26.9.10.exe"
         Args     = "/S"
         RegName  = "Zalo"
@@ -30,6 +39,7 @@ $Apps = @(
     @{
         Name     = "UniKey"
         Type     = "exe-portable"   # ← tải exe trực tiếp, không cài, tạo shortcut
+        FileName = "UniKeyNT.exe"
         Url      = "$GhBase/UniKeyNT.exe"
         ExeName  = "UniKeyNT.exe"
         RegName  = "UniKey"
@@ -39,6 +49,7 @@ $Apps = @(
     @{
         Name     = "UltraViewer"
         Type     = "exe"
+        FileName = "UltraViewer_setup_6.6.133_vi.exe"
         Url      = "$GhBase/UltraViewer_setup_6.6.133_vi.exe"
         Args     = "/S"
         RegName  = "UltraViewer"
@@ -46,6 +57,7 @@ $Apps = @(
     @{
         Name     = "Google Chrome"
         Type     = "exe"
+        FileName = "ChromeSetup.exe"
         Url      = "$GhBase/ChromeSetup.exe"
         Args     = "/silent /install"
         RegName  = "Google Chrome"
@@ -70,8 +82,9 @@ function Show-Header {
     Write-Host "              WINDOWS QUICK SETUP" -ForegroundColor Cyan
     Write-Line
     Write-Host ""
-    Write-Host " [1] 1 Click Setup" -ForegroundColor White
-    Write-Host " [0] Exit" -ForegroundColor White
+    Write-Host " [1] 1 Click Setup Online"  -ForegroundColor White
+    Write-Host " [2] 1 Click Setup Offline" -ForegroundColor White
+    Write-Host " [0] Exit"                  -ForegroundColor White
     Write-Host ""
 }
 
@@ -159,13 +172,14 @@ function Add-StartupShortcut {
 function Install-App {
     param (
         [hashtable]$App,
-        [int]$Number
+        [int]$Number,
+        [switch]$Offline
     )
 
     Write-Host ""
     Write-Line
     Write-Host "[$Number/$TotalApps] $($App.Name)" -ForegroundColor Cyan
-    Write-Host "Type: $($App.Type)" -ForegroundColor DarkGray
+    Write-Host "Type: $($App.Type)  |  Mode: $(if ($Offline) {'OFFLINE'} else {'ONLINE'})" -ForegroundColor DarkGray
     Write-Host ""
 
     # ---------- CHECK ----------
@@ -187,10 +201,23 @@ function Install-App {
 
             $ExePath = Join-Path $UniKeyDir $App.ExeName
 
-            Write-Host "[>] Downloading $($App.Name)..." -ForegroundColor Cyan
-            Invoke-WebRequest -Uri $App.Url -OutFile $ExePath -UseBasicParsing -ErrorAction Stop
+            if ($Offline) {
+                # ---- Lấy từ USB ----
+                $SrcExe = Join-Path $OfflineDir $App.FileName
+                if (-not (Test-Path $SrcExe)) {
+                    throw "Không tìm thấy file offline: $SrcExe"
+                }
 
-            Write-Host "[+] Saved to: $ExePath" -ForegroundColor Green
+                Write-Host "[>] Copying $($App.Name) from USB..." -ForegroundColor Cyan
+                Copy-Item -Path $SrcExe -Destination $ExePath -Force
+                Write-Host "[+] Copied to: $ExePath" -ForegroundColor Green
+            }
+            else {
+                # ---- Download từ GitHub ----
+                Write-Host "[>] Downloading $($App.Name)..." -ForegroundColor Cyan
+                Invoke-WebRequest -Uri $App.Url -OutFile $ExePath -UseBasicParsing -ErrorAction Stop
+                Write-Host "[+] Saved to: $ExePath" -ForegroundColor Green
+            }
 
             if ($App.DesktopShortcut) {
                 $lnk = New-DesktopShortcut -TargetPath $ExePath -ShortcutName $App.Name -WorkingDir $UniKeyDir
@@ -218,25 +245,35 @@ function Install-App {
     }
 
     # ---------- EXE INSTALLER ----------
-    Write-Host "[>] Starting download / installation..." -ForegroundColor Cyan
-    Write-Host ""
-    Write-Host "    Please wait..." -ForegroundColor DarkGray
-    Write-Host ""
-
     if (-not (Test-Path $DownloadRoot)) {
         New-Item -ItemType Directory -Path $DownloadRoot -Force | Out-Null
     }
 
-    $FileName = "$($App.Name -replace '\s','_')_setup.exe"
-    $FilePath = Join-Path $DownloadRoot $FileName
+    $TempFileName = "$($App.Name -replace '\s','_')_setup.exe"
+    $FilePath = Join-Path $DownloadRoot $TempFileName
 
     $StartTime = Get-Date
 
     try {
-        Write-Host "[>] Downloading..." -ForegroundColor Cyan
-        Invoke-WebRequest -Uri $App.Url -OutFile $FilePath -UseBasicParsing -ErrorAction Stop
+        if ($Offline) {
+            # ---- Lấy từ USB ----
+            $SrcExe = Join-Path $OfflineDir $App.FileName
+            if (-not (Test-Path $SrcExe)) {
+                throw "Không tìm thấy file offline: $SrcExe"
+            }
+
+            Write-Host "[>] Copying installer from USB..." -ForegroundColor Cyan
+            Copy-Item -Path $SrcExe -Destination $FilePath -Force
+            Write-Host "[+] Ready: $FilePath" -ForegroundColor Green
+        }
+        else {
+            # ---- Download từ GitHub ----
+            Write-Host "[>] Downloading..." -ForegroundColor Cyan
+            Invoke-WebRequest -Uri $App.Url -OutFile $FilePath -UseBasicParsing -ErrorAction Stop
+        }
 
         Write-Host "[>] Running installer..." -ForegroundColor Cyan
+        Write-Host ""
 
         $Proc = Start-Process -FilePath $FilePath -ArgumentList $App.Args -Wait -PassThru
 
@@ -293,7 +330,7 @@ function Show-OverallProgress {
 
 
 # ============================================================
-# POST SETUP
+# POST SETUP (dùng cho cả online & offline)
 # ============================================================
 
 function Start-PostSetupCMD {
@@ -308,34 +345,34 @@ function Start-PostSetupCMD {
 
     $TempCmd = Join-Path $env:TEMP "windows-quick-setup-post.cmd"
 
-    Write-Host "[>] Downloading post-setup.cmd..." -ForegroundColor Yellow
+    Write-Host "[>] Downloading active.cmd..." -ForegroundColor Yellow
     try {
         Invoke-WebRequest -Uri $CmdUrl -OutFile $TempCmd -UseBasicParsing -ErrorAction Stop
         Write-Host "[+] CMD downloaded." -ForegroundColor Green
         Write-Host ""
     }
     catch {
-        Write-Host "[X] Failed to download post-setup.cmd" -ForegroundColor Red
+        Write-Host "[X] Failed to download active.cmd" -ForegroundColor Red
         Write-Host "    $($_.Exception.Message)" -ForegroundColor Red
         return
     }
 
-    Write-Host "[>] Running post-setup.cmd..." -ForegroundColor Cyan
+    Write-Host "[>] Running active.cmd..." -ForegroundColor Cyan
     Write-Host ""
     try {
         $Process = Start-Process -FilePath "cmd.exe" -ArgumentList "/c `"$TempCmd`"" -Wait -PassThru
         if ($Process.ExitCode -eq 0) {
             Write-Host ""
-            Write-Host "[+] post-setup.cmd completed." -ForegroundColor Green
+            Write-Host "[+] active.cmd completed." -ForegroundColor Green
         }
         else {
             Write-Host ""
-            Write-Host "[X] post-setup.cmd exit code $($Process.ExitCode)." -ForegroundColor Red
+            Write-Host "[X] active.cmd exit code $($Process.ExitCode)." -ForegroundColor Red
         }
     }
     catch {
         Write-Host ""
-        Write-Host "[X] Failed to execute post-setup.cmd" -ForegroundColor Red
+        Write-Host "[X] Failed to execute active.cmd" -ForegroundColor Red
         Write-Host "    $($_.Exception.Message)" -ForegroundColor Red
     }
 
@@ -345,38 +382,73 @@ function Start-PostSetupCMD {
 
 
 # ============================================================
-# QUICK SETUP
+# QUICK SETUP (ONLINE / OFFLINE)
 # ============================================================
 
 function Start-QuickSetup {
+    param ([switch]$Offline)
+
+    $ModeLabel = if ($Offline) { "OFFLINE (USB)" } else { "ONLINE (GitHub)" }
 
     Clear-Host
     Write-Host ""
     Write-Line
     Write-Host "              QUICK SETUP STARTED" -ForegroundColor Cyan
+    Write-Host "              Mode: $ModeLabel" -ForegroundColor Cyan
     Write-Line
     Write-Host ""
 
-    $Results  = @()
-    $Current  = 0
+    # ---- Kiểm tra thư mục offline ----
+    if ($Offline) {
+        if (-not (Test-Path $OfflineDir)) {
+            Write-Host "[X] Không tìm thấy thư mục offline:" -ForegroundColor Red
+            Write-Host "    $OfflineDir" -ForegroundColor Red
+            Write-Host ""
+            Write-Host "Hãy tạo thư mục 'offline' cạnh file script và đặt các file cài vào đó." -ForegroundColor Yellow
+            Write-Host ""
+            Read-Host "Press Enter to return to menu"
+            return
+        }
+
+        # Kiểm tra sơ bộ các file cần thiết
+        $Missing = @()
+        foreach ($App in $Apps) {
+            $Src = Join-Path $OfflineDir $App.FileName
+            if (-not (Test-Path $Src)) { $Missing += $App.FileName }
+        }
+
+        if ($Missing.Count -gt 0) {
+            Write-Host "[!] Các file sau không tìm thấy trong thư mục offline:" -ForegroundColor Yellow
+            foreach ($m in $Missing) {
+                Write-Host "    - $m" -ForegroundColor Yellow
+            }
+            Write-Host ""
+            Write-Host "Vẫn tiếp tục? Những app thiếu file sẽ bị đánh dấu FAILED." -ForegroundColor Yellow
+            $confirm = Read-Host "Tiếp tục? (y/n)"
+            if ($confirm -notmatch '^[yY]') { return }
+            Write-Host ""
+        }
+    }
+
+    $Results    = @()
+    $Current    = 0
     $SetupStart = Get-Date
 
     foreach ($App in $Apps) {
         $Current++
         Show-OverallProgress -Current ($Current - 1) -Total $TotalApps
-        $Status = Install-App -App $App -Number $Current
+        $Status = Install-App -App $App -Number $Current -Offline:$Offline
         $Results += [PSCustomObject]@{ Name = $App.Name; Status = $Status }
         Show-OverallProgress -Current $Current -Total $TotalApps
     }
 
-    # POST SETUP
-    $PostSetupUrl = "https://raw.githubusercontent.com/Tunaa-11342/probable-engine/refs/heads/main/active.cmd"
+    # ---- POST SETUP (luôn chạy, online hay offline đều tải active.cmd) ----
     Start-PostSetupCMD -CmdUrl $PostSetupUrl
 
     $SetupEnd  = Get-Date
     $TotalTime = $SetupEnd - $SetupStart
 
-    # SUMMARY
+    # ---- SUMMARY ----
     Write-Host ""
     Write-Host ""
     Write-Line
@@ -407,6 +479,7 @@ function Start-QuickSetup {
     $FailedCount  = @($Results | Where-Object { $_.Status -eq "FAILED"  }).Count
 
     Write-Line
+    Write-Host "Mode       : $ModeLabel" -ForegroundColor White
     Write-Host "Total time : $(Format-Time $TotalTime)" -ForegroundColor White
     Write-Host "Installed  : $SuccessCount" -ForegroundColor Green
     Write-Host "Skipped    : $SkippedCount" -ForegroundColor Yellow
@@ -438,7 +511,8 @@ while ($true) {
     $Choice = Read-Host "Select an option"
 
     switch ($Choice) {
-        "1" { Start-QuickSetup }
+        "1" { Start-QuickSetup }            # Online
+        "2" { Start-QuickSetup -Offline }   # Offline
         "0" {
             Clear-Host
             Write-Host ""
