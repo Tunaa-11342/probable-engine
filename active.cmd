@@ -502,7 +502,7 @@ call :dk_showosinfo
 
 ::========================================================================================================================================
 
-echo Initiating Diagnostic Tests...
+if not defined _hidecheck echo Initiating Diagnostic Tests...
 call :dk_color %Gray% "Dang kiem tra he thong, vui long doi..."
 set _hidecheck=1
 start /b "" "%~f0" /loadingbar
@@ -609,7 +609,7 @@ set "sacstate="
 if %winbuild% GEQ 22621 (
 for /f "tokens=3" %%a in ('reg query "HKLM\SYSTEM\CurrentControlSet\Control\CI\Policy" /v VerifiedAndReputablePolicyState %nul6%') do set "sacstate=%%a"
 )
-if defined sacstate (
+if not defined _hidecheck if defined sacstate (
 if "%sacstate%"=="0x1" (
 call :dk_color %Gray% "Checking Smart App Control State        [Enabled]"
 call :dk_color %Blue% "Smart App Control may prevent you from opening Office after Ohook activation."
@@ -656,7 +656,7 @@ echo:
 echo Activating Office...                    [C2R ^| %_version% ^| %_oArch%]
 
 if not defined _oIds (
-call :dk_color %Red% "Checking Installed Products             [Product IDs not found. Aborting activation...]"
+if not defined _hidecheck call :dk_color %Red% "Checking Installed Products             [Product IDs not found. Aborting activation...]"
 set error=1
 goto :starto16c2r
 )
@@ -762,7 +762,7 @@ reg add "%kmskey%" /f /v KeyManagementServiceName /t REG_SZ /d "10.0.0.10" /reg:
 )
 reg delete "%kmskey%" /f %nul%
 reg add "%kmskey%" /f /v KeyManagementServiceName /t REG_SZ /d "10.0.0.10" %nul%
-echo Adding a Registry to Prevent Banner     [Successful]
+if not defined _hidecheck echo Adding a Registry to Prevent Banner     [Successful]
 )
 )
 
@@ -1169,9 +1169,11 @@ set ierror=Copy
 goto :oh_hookinstall_error
 )
 
+if not defined _hidecheck (
 echo:
 echo Symlinking System's sppc.dll            ["%_hookPath%\sppcs.dll"] [Successful]
 echo Extracting Custom %_hook% to         ["%_hookPath%\sppc.dll"] [Successful]
+)
 
 goto :oh_hookinstall_error
 
@@ -1346,7 +1348,7 @@ if defined winserver if defined _config if exist "%_oLPath%\Word2019VL_KMS_Clien
 echo %_oIds% | find /i "Retail" %nul1% && (
 set scaIsNeeded=1
 reg add %_config% /v SharedComputerLicensing /t REG_SZ /d "1" /f %nul1%
-echo Adding SharedComputerLicensing Reg      [Successful] [Needed on Server With Retail Office]"
+if not defined _hidecheck echo Adding SharedComputerLicensing Reg      [Successful] [Needed on Server With Retail Office]
 )
 )
 
@@ -1539,7 +1541,7 @@ reg delete "HKU\S-1-5-20\Software\Microsoft\Windows NT\CurrentVersion\SoftwarePr
 reg delete "HKU\S-1-5-20\Software\Microsoft\OfficeSoftwareProtectionPlatform\Policies\0ff1ce15-a989-479d-af46-f275c6370663" /f %nul%
 reg delete "HKU\S-1-5-20\Software\Microsoft\OfficeSoftwareProtectionPlatform\Policies\59a52881-a989-479d-af46-f275c6370663" /f %nul%
 
-echo Clearing Office License Blocks          [Successfully cleared from all %counter% user accounts]
+if not defined _hidecheck echo Clearing Office License Blocks          [Successfully cleared from all %counter% user accounts]
 
 ::==========================
 
@@ -1562,7 +1564,7 @@ for %%# in (%_sidlist%) do (
 reg delete HKU\%%#\Software\Microsoft\Office\16.0\Common\Licensing\Resiliency /f %nul%
 reg add HKU\%%#\Software\Microsoft\Office\16.0\Common\Licensing\Resiliency /v "TimeOfLastHeartbeatFailure" /t REG_SZ /d "2040-01-01T00:00:00Z" /f %nul%
 )
-echo Adding Registry to Skip License Check   [Successfully added to all %counter% ^& future new user accounts]
+if not defined _hidecheck echo Adding Registry to Skip License Check   [Successfully added to all %counter% ^& future new user accounts]
 )
 
 ::==========================
@@ -1605,7 +1607,7 @@ set upk_result=2
 )
 
 if defined ohookact if not %upk_result%==0 echo:
-if %upk_result%==1 echo Uninstalling Other/Grace Keys           [Successful]
+if %upk_result%==1 if not defined _hidecheck echo Uninstalling Other/Grace Keys           [Successful]
 if %upk_result%==2 (
 call :dk_color %Red% "Uninstalling Other/Grace Keys           [Failed]"
 if not defined showfix (
@@ -1728,7 +1730,7 @@ if defined UBR (set "fullbuild=%%G.!UBR!") else (set "fullbuild=%%G.%%H")
 )
 )
 
-echo Checking OS Info                        [%winos% ^| %fullbuild% ^| %osarch%]
+if not defined _hidecheck echo Checking OS Info                        [%winos% ^| %fullbuild% ^| %osarch%]
 exit /b
 
 ::  Refresh license status
@@ -2299,7 +2301,7 @@ call :dk_color %Blue% "A large number of WPA registries have been found, which m
 call :dk_color %Blue% "Go back to Main Menu, select Troubleshoot and run Fix WPA Registry option."
 echo:
 ) else (
-echo Checking WPA Registry Count             [%wpainfo%]
+if not defined _hidecheck echo Checking WPA Registry Count             [%wpainfo%]
 )
 )
 
@@ -2483,7 +2485,7 @@ call :dk_color %Gray% "Checking SLC/WMI SKU                    [Difference Found
 sc query wlms %nul%
 
 if %errorlevel% NEQ 1060 (
-echo Checking Eval WLMS Service              [Found]
+if not defined _hidecheck echo Checking Eval WLMS Service              [Found]
 )
 
 ::==============================
@@ -2502,7 +2504,7 @@ echo:
 )
 set showfix=1
 ) || (
-echo Checking SPP In IFEO                    [%_sppint%]
+if not defined _hidecheck echo Checking SPP In IFEO                    [%_sppint%]
 )
 )
 
@@ -2632,14 +2634,14 @@ exit /b
 
 title Dang xu ly...
 setlocal EnableDelayedExpansion
-set "bar=                    "
-set "chars=>                   "
+set "bar=####################"
+set /a pos=0
 for /l %%i in (1,1,99999) do (
-    set "line=!chars:~-20!"
+    set /a pos=%%i %% 21
+    set "line=!bar:~0,%pos%!"
     <nul set /p "=  [!line!]  "
     ping 127.0.0.1 -n 2 >nul
-    set "chars= !chars:~0,19!"
-    <nul set /p "=!bs! !bs!"
+    <nul set /p "=!bs!!bs!!bs!!bs!!bs!!bs!!bs!!bs!!bs!!bs!!bs!!bs!!bs!!bs!!bs!!bs!!bs!!bs!!bs!!bs!!bs!!bs!!bs!!bs!!bs!"
 )
 exit /b
 
