@@ -50,7 +50,7 @@ $Apps = @(
         Type     = "exe"
         FileName = "UltraViewer_setup_6.6.133_vi.exe"
         Url      = "$GhBase/UltraViewer_setup_6.6.133_vi.exe"
-        Args     = "/S"
+        Args     = "/SP- /VERYSILENT /SUPPRESSMSGBOXES /NORESTART"
         RegName  = "UltraViewer"
     },
     @{
@@ -294,7 +294,7 @@ function Install-App {
             Invoke-WebRequest -Uri $App.Url -OutFile $FilePath -UseBasicParsing -ErrorAction Stop
         }
 
-        Write-Host "[>] Running installer..." -ForegroundColor Cyan
+        Write-Host "[>] Running silent installer..." -ForegroundColor Cyan
         Write-Host ""
 
         $Proc = Start-Process -FilePath $FilePath -ArgumentList $App.Args -Wait -PassThru
