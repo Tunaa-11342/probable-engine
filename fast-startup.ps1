@@ -20,6 +20,13 @@ $OfflineFolderName = "app can cai"
 $OfficeIsoUrl  = ""                          # <- ONLINE: tự dán link direct ISO vào đây (trống = bỏ qua Office)
 $OfficeIsoName = "O365ProPlusRetail.iso"     # <- OFFLINE: tên file ISO trong thư mục $OfflineFolderName
 
+# ---- WIFI (menu [4]) - điền SSID / mật khẩu vào đây, thêm bao nhiêu WiFi cũng được ----
+# Mật khẩu để trống = mạng mở (không mật khẩu). SSID để trống = bỏ qua dòng đó.
+$WifiList = @(
+    @{ Ssid = ""; Password = "" }
+    # @{ Ssid = "WIFI_DU_PHONG"; Password = "matkhau" }
+)
+
 # Post-setup cmd (dùng cho cả online & offline)
 $PostSetupUrl = "https://raw.githubusercontent.com/Tunaa-11342/probable-engine/refs/heads/main/active.cmd"
 
@@ -124,6 +131,7 @@ function Show-Header {
     Write-Host " [1] 1 Click Setup Online"      -ForegroundColor White
     Write-Host " [2] 1 Click Setup Offline"     -ForegroundColor White
     Write-Host " [3] Surface Driver Setup (USB)" -ForegroundColor White
+    Write-Host " [4] Connect WiFi (Offline)"     -ForegroundColor White
     Write-Host " [0] Exit"                      -ForegroundColor White
     Write-Host ""
 }
@@ -651,6 +659,124 @@ function Start-SurfaceDriverSetup {
 
 
 # ============================================================
+# WIFI (nạp profile bằng netsh, không cần nhập tay)
+# ============================================================
+
+function Start-WifiSetup {
+    Clear-Host
+    Write-Host ""
+    Write-Line
+    Write-Host "              CONNECT WIFI" -ForegroundColor Cyan
+    Write-Line
+    Write-Host ""
+
+    $List = @($WifiList | Where-Object { $_.Ssid })
+    if ($List.Count -eq 0) {
+        Write-Host "[X] Chưa cấu hình WiFi (sửa `$WifiList ở phần CONFIG)" -ForegroundColor Red
+        Write-Host ""
+        Read-Host "Press Enter to return to menu"
+        return
+    }
+
+    # ---------- Kiểm tra card WiFi ----------
+    $Wlan = Get-NetAdapter -Physical -ErrorAction SilentlyContinue |
+            Where-Object { $_.PhysicalMediaType -match '802\.11' -or $_.InterfaceDescription -match 'Wi-?Fi|Wireless|WLAN' }
+
+    if (-not $Wlan) {
+        Write-Host "[X] Không thấy card WiFi (cài driver Surface trước - menu [3])" -ForegroundColor Red
+        Write-Host ""
+        Read-Host "Press Enter to return to menu"
+        return
+    }
+
+    $Svc = Get-Service -Name WlanSvc -ErrorAction SilentlyContinue
+    if ($Svc -and $Svc.Status -ne "Running") {
+        Start-Service -Name WlanSvc -ErrorAction SilentlyContinue
+        Start-Sleep -Seconds 2
+    }
+
+    # ---------- Nạp profile ----------
+    $TempXml = Join-Path $env:TEMP "wifi_profile.xml"
+    $Added   = @()
+
+    foreach ($W in $List) {
+        $Ssid = "$($W.Ssid)"
+        $Pw   = "$($W.Password)"
+        $SsidX = [System.Security.SecurityElement]::Escape($Ssid)
+
+        if ($Pw) {
+            $PwX      = [System.Security.SecurityElement]::Escape($Pw)
+            $Auth     = "WPA2PSK"
+            $Enc      = "AES"
+            $KeyBlock = "<sharedKey><keyType>passphrase</keyType><protected>false</protected><keyMaterial>$PwX</keyMaterial></sharedKey>"
+        }
+        else {
+            $Auth     = "open"
+            $Enc      = "none"
+            $KeyBlock = ""
+        }
+
+        $Xml = @"
+<?xml version="1.0"?>
+<WLANProfile xmlns="http://www.microsoft.com/networking/WLAN/profile/v1">
+  <name>$SsidX</name>
+  <SSIDConfig><SSID><name>$SsidX</name></SSID></SSIDConfig>
+  <connectionType>ESS</connectionType>
+  <connectionMode>auto</connectionMode>
+  <MSM><security><authEncryption><authentication>$Auth</authentication><encryption>$Enc</encryption><useOneX>false</useOneX></authEncryption>$KeyBlock</security></MSM>
+</WLANProfile>
+"@
+
+        try {
+            Set-Content -Path $TempXml -Value $Xml -Encoding UTF8
+            netsh wlan add profile filename="$TempXml" user=all | Out-Null
+            if ($LASTEXITCODE -eq 0) {
+                Write-Host "[+] Đã nạp WiFi: $Ssid" -ForegroundColor Green
+                $Added += $Ssid
+            }
+            else {
+                Write-Host "[X] Nạp WiFi thất bại: $Ssid" -ForegroundColor Red
+            }
+        }
+        finally {
+            Remove-Item $TempXml -Force -ErrorAction SilentlyContinue   # file chứa mật khẩu, xoá ngay
+        }
+    }
+
+    if ($Added.Count -eq 0) {
+        Write-Host ""
+        Read-Host "Press Enter to return to menu"
+        return
+    }
+
+    # ---------- Kết nối ----------
+    $Online = $false
+    foreach ($Ssid in $Added) {
+        Write-Host "[>] Connecting: $Ssid..." -ForegroundColor Cyan
+        netsh wlan connect name="$Ssid" | Out-Null
+
+        for ($i = 0; $i -lt 15 -and -not $Online; $i++) {
+            Start-Sleep -Seconds 1
+            $Online = Test-Connection -ComputerName 1.1.1.1 -Count 1 -Quiet -ErrorAction SilentlyContinue
+        }
+
+        if ($Online) {
+            Write-Host "[+] Connected: $Ssid - SUCCESS" -ForegroundColor Green
+            break
+        }
+        Write-Host "[!] Chưa kết nối được $Ssid" -ForegroundColor Yellow
+    }
+
+    if (-not $Online) {
+        Write-Host "[X] Chưa có internet (sai mật khẩu hoặc ngoài vùng phủ sóng)" -ForegroundColor Red
+    }
+
+    Write-Host ""
+    Read-Host "Press Enter to return to menu"
+}
+
+
+# ============================================================
 # QUICK SETUP (ONLINE / OFFLINE)
 # ============================================================
 
@@ -802,6 +928,7 @@ while ($true) {
         "1" { Start-QuickSetup }            # Online
         "2" { Start-QuickSetup -Offline }   # Offline
         "3" { Start-SurfaceDriverSetup }    # Surface driver (USB)
+        "4" { Start-WifiSetup }             # WiFi (offline)
         "0" {
             Clear-Host
             Write-Host ""
