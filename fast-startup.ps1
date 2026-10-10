@@ -1,6 +1,7 @@
 #requires -version 5.1
 
 $ErrorActionPreference = "Continue"
+$ProgressPreference    = "SilentlyContinue"   # tăng tốc Invoke-WebRequest
 
 # ============================================================
 # CONFIG
@@ -14,6 +15,10 @@ $GhBase = "https://github.com/Tunaa-11342/probable-engine/releases/download/v5.0
 
 # ---- OFFLINE: tên thư mục chứa bộ cài trên USB ----
 $OfflineFolderName = "app can cai"
+
+# ---- OFFICE ----
+$OfficeIsoUrl  = ""                          # <- ONLINE: tự dán link direct ISO vào đây (trống = bỏ qua Office)
+$OfficeIsoName = "O365ProPlusRetail.iso"     # <- OFFLINE: tên file ISO trong thư mục $OfflineFolderName
 
 # Post-setup cmd (dùng cho cả online & offline)
 $PostSetupUrl = "https://raw.githubusercontent.com/Tunaa-11342/probable-engine/refs/heads/main/active.cmd"
@@ -60,6 +65,14 @@ $Apps = @(
         Url      = "$GhBase/ChromeSetup.exe"
         Args     = "/silent /install"
         RegName  = "Google Chrome"
+    },
+    @{
+        Name     = "Microsoft Office"
+        Type     = "iso"
+        FileName = $OfficeIsoName
+        Url      = $OfficeIsoUrl
+        RegNames = @("Microsoft 365", "Microsoft Office")
+        RegName  = "Microsoft Office"
     }
 )
 
@@ -108,9 +121,10 @@ function Show-Header {
     Write-Host "              WINDOWS QUICK SETUP" -ForegroundColor Cyan
     Write-Line
     Write-Host ""
-    Write-Host " [1] 1 Click Setup Online"  -ForegroundColor White
-    Write-Host " [2] 1 Click Setup Offline" -ForegroundColor White
-    Write-Host " [0] Exit"                  -ForegroundColor White
+    Write-Host " [1] 1 Click Setup Online"      -ForegroundColor White
+    Write-Host " [2] 1 Click Setup Offline"     -ForegroundColor White
+    Write-Host " [3] Surface Driver Setup (USB)" -ForegroundColor White
+    Write-Host " [0] Exit"                      -ForegroundColor White
     Write-Host ""
 }
 
@@ -130,7 +144,7 @@ function Format-Time {
 # ============================================================
 
 function Test-AppInstalled {
-    param ([string]$Name)
+    param ([string[]]$Names)
 
     $paths = @(
         "HKLM:\SOFTWARE\Microsoft\Windows\CurrentVersion\Uninstall\*",
@@ -138,10 +152,12 @@ function Test-AppInstalled {
         "HKCU:\SOFTWARE\Microsoft\Windows\CurrentVersion\Uninstall\*"
     )
 
-    foreach ($p in $paths) {
-        $found = Get-ItemProperty $p -ErrorAction SilentlyContinue |
-                 Where-Object { $_.DisplayName -and $_.DisplayName -like "*$Name*" }
-        if ($found) { return $true }
+    foreach ($Name in $Names) {
+        foreach ($p in $paths) {
+            $found = Get-ItemProperty $p -ErrorAction SilentlyContinue |
+                     Where-Object { $_.DisplayName -and $_.DisplayName -like "*$Name*" }
+            if ($found) { return $true }
+        }
     }
     return $false
 }
@@ -192,6 +208,121 @@ function Add-StartupShortcut {
 
 
 # ============================================================
+# INSTALL ISO APP (Office): copy/tải -> mount -> setup.exe -> dismount -> xoá
+# ============================================================
+
+function Install-IsoApp {
+    param (
+        [hashtable]$App,
+        [string]$OfflineSourceDir = ""
+    )
+
+    $IsOffline = -not [string]::IsNullOrWhiteSpace($OfflineSourceDir)
+
+    # ONLINE mà chưa có link -> bỏ qua
+    if (-not $IsOffline -and [string]::IsNullOrWhiteSpace($App.Url)) {
+        Write-Host "[=] Chưa cấu hình link ISO - SKIPPED" -ForegroundColor Yellow
+        return "SKIPPED"
+    }
+
+    if (-not (Test-Path $DownloadRoot)) {
+        New-Item -ItemType Directory -Path $DownloadRoot -Force | Out-Null
+    }
+
+    $IsoPath   = Join-Path $DownloadRoot "$($App.Name -replace '\s','_').iso"
+    $StartTime = Get-Date
+    $Mounted   = $false
+
+    try {
+        # ---------- Lấy file ISO + check dung lượng ----------
+        if ($IsOffline) {
+            $SrcIso = Join-Path $OfflineSourceDir $App.FileName
+            if (-not (Test-Path $SrcIso)) {
+                throw "Không tìm thấy file ISO: $SrcIso"
+            }
+            $Need = (Get-Item $SrcIso).Length + 4GB
+        }
+        else {
+            $Need = 12GB
+        }
+
+        $SysLetter = $env:SystemDrive.TrimEnd(':')
+        $Free      = (Get-PSDrive -Name $SysLetter).Free
+        if ($Free -lt $Need) {
+            throw ("Không đủ dung lượng ổ {0}: (cần ~{1} GB, còn {2} GB)" -f $SysLetter, [math]::Ceiling($Need / 1GB), [math]::Floor($Free / 1GB))
+        }
+
+        if ($IsOffline) {
+            Write-Host "[>] Copying ISO from USB to disk..." -ForegroundColor Cyan
+            Copy-Item -Path $SrcIso -Destination $IsoPath -Force -ErrorAction Stop
+            Write-Host "[+] Copied" -ForegroundColor Green
+        }
+        else {
+            Write-Host "[>] Downloading ISO..." -ForegroundColor Cyan
+            Invoke-WebRequest -Uri $App.Url -OutFile $IsoPath -UseBasicParsing -ErrorAction Stop
+            Write-Host "[+] Downloaded" -ForegroundColor Green
+        }
+
+        # ---------- Mount ----------
+        Write-Host "[>] Mounting..." -ForegroundColor Cyan
+        Mount-DiskImage -ImagePath $IsoPath -ErrorAction Stop | Out-Null
+        $Mounted = $true
+
+        $Letter = $null
+        for ($i = 0; $i -lt 15 -and -not $Letter; $i++) {
+            $Vol = Get-DiskImage -ImagePath $IsoPath | Get-Volume -ErrorAction SilentlyContinue
+            if ($Vol -and $Vol.DriveLetter) { $Letter = $Vol.DriveLetter } else { Start-Sleep -Seconds 1 }
+        }
+        if (-not $Letter) { throw "Không lấy được ký tự ổ đĩa sau khi mount ISO" }
+
+        $Setup = "${Letter}:\setup.exe"
+        if (-not (Test-Path $Setup)) { throw "Không thấy setup.exe trong ISO ($Setup)" }
+        Write-Host "[+] Mounted at drive ${Letter}:" -ForegroundColor Green
+
+        # ---------- Run setup ----------
+        Write-Host "[>] Running setup.exe..." -ForegroundColor Cyan
+        $Proc = Start-Process -FilePath $Setup -WorkingDirectory "${Letter}:\" -Wait -PassThru
+
+        # Chờ thêm nếu setup còn tiến trình con chạy từ ổ ISO (tránh dismount sớm)
+        while ($true) {
+            $Still = Get-Process -ErrorAction SilentlyContinue | Where-Object {
+                try { $_.Path -and $_.Path.StartsWith("${Letter}:\", [StringComparison]::OrdinalIgnoreCase) } catch { $false }
+            }
+            if (-not $Still) { break }
+            Start-Sleep -Seconds 5
+        }
+
+        $Elapsed = (Get-Date) - $StartTime
+        Write-Host "    Finished in $(Format-Time $Elapsed)" -ForegroundColor DarkGray
+
+        if ($Proc.ExitCode -eq 0 -or $Proc.ExitCode -eq 3010) {
+            Write-Host ""
+            Write-Host "[+] $($App.Name) - SUCCESS" -ForegroundColor Green
+            return "SUCCESS"
+        }
+
+        Write-Host ""
+        Write-Host "[X] $($App.Name) - FAILED" -ForegroundColor Red
+        Write-Host "    Exit code: $($Proc.ExitCode)" -ForegroundColor Red
+        return "FAILED"
+    }
+    catch {
+        Write-Host ""
+        Write-Host "[X] $($App.Name) - ERROR" -ForegroundColor Red
+        Write-Host "    $($_.Exception.Message)" -ForegroundColor Red
+        return "FAILED"
+    }
+    finally {
+        if ($Mounted) {
+            Write-Host "[>] Dismounting & cleaning up..." -ForegroundColor DarkGray
+            Dismount-DiskImage -ImagePath $IsoPath -ErrorAction SilentlyContinue | Out-Null
+        }
+        Remove-Item $IsoPath -Force -ErrorAction SilentlyContinue
+    }
+}
+
+
+# ============================================================
 # INSTALL APP
 # ============================================================
 
@@ -212,13 +343,19 @@ function Install-App {
 
     # ---------- CHECK ----------
     Write-Host "[*] Checking..." -ForegroundColor Yellow
-    if (Test-AppInstalled -Name $App.RegName) {
+    $RegList = if ($App.RegNames) { $App.RegNames } else { @($App.RegName) }
+    if (Test-AppInstalled -Names $RegList) {
         Write-Host ""
         Write-Host "[=] Already installed - SKIPPED" -ForegroundColor Green
         return "SKIPPED"
     }
     Write-Host "[+] Not installed." -ForegroundColor Gray
     Write-Host ""
+
+    # ---------- ISO (Office) ----------
+    if ($App.Type -eq "iso") {
+        return (Install-IsoApp -App $App -OfflineSourceDir $OfflineSourceDir)
+    }
 
     # ---------- EXE-PORTABLE (UniKey) ----------
     if ($App.Type -eq "exe-portable") {
@@ -404,6 +541,116 @@ function Start-PostSetupCMD {
 
 
 # ============================================================
+# SURFACE DRIVER (MSI trên USB)
+# ============================================================
+
+function Find-SurfaceMsi {
+    param ([string]$Model)
+
+    # "Surface Laptop 4" -> "surfacelaptop4"
+    $Norm    = ($Model -replace '\s', '').ToLower()
+    # Không cho khớp tiếp số hoặc dấu + (tránh Pro 7 khớp nhầm Pro 7+ / Pro 70...)
+    $Pattern = [regex]::Escape($Norm) + '(?![0-9+])'
+    $OsTag   = if ([Environment]::OSVersion.Version.Build -ge 22000) { 'win11' } else { 'win10' }
+
+    $Drives = 68..90 | ForEach-Object { "$([char]$_)`:\" }
+
+    foreach ($Drive in $Drives) {
+        if (-not (Test-Path $Drive)) { continue }
+
+        $Files = @(Get-ChildItem -Path $Drive -Filter *.msi -Recurse -Depth 2 -File -ErrorAction SilentlyContinue |
+                   Where-Object { (($_.Name -replace '\s', '').ToLower()) -match $Pattern })
+
+        if ($Files.Count -gt 0) {
+            $Pick = $Files | Where-Object { $_.Name.ToLower() -match $OsTag } |
+                    Sort-Object Name -Descending | Select-Object -First 1
+            if (-not $Pick) {
+                $Pick = $Files | Sort-Object Name -Descending | Select-Object -First 1
+            }
+            return $Pick.FullName
+        }
+    }
+    return $null
+}
+
+function Start-SurfaceDriverSetup {
+    Clear-Host
+    Write-Host ""
+    Write-Line
+    Write-Host "         SURFACE DRIVER SETUP" -ForegroundColor Cyan
+    Write-Line
+    Write-Host ""
+
+    # ---------- Đọc thông tin máy ----------
+    try {
+        $Cs = Get-CimInstance -ClassName Win32_ComputerSystem -ErrorAction Stop
+    }
+    catch {
+        Write-Host "[X] Không đọc được thông tin máy: $($_.Exception.Message)" -ForegroundColor Red
+        Write-Host ""
+        Read-Host "Press Enter to return to menu"
+        return
+    }
+
+    $Manufacturer = "$($Cs.Manufacturer)".Trim()
+    $Model        = "$($Cs.Model)".Trim()
+
+    if ($Manufacturer -notlike "*Microsoft*" -or $Model -notlike "*Surface*") {
+        Write-Host "[X] Không phải máy Surface" -ForegroundColor Red
+        Write-Host "    ($Manufacturer - $Model)" -ForegroundColor DarkGray
+        Write-Host ""
+        Read-Host "Press Enter to return to menu"
+        return
+    }
+
+    Write-Host "[*] Model: $Model" -ForegroundColor White
+
+    # ---------- Tìm MSI ----------
+    $Msi = Find-SurfaceMsi -Model $Model
+
+    if (-not $Msi) {
+        $AnyDrive = 68..90 | Where-Object { Test-Path "$([char]$_)`:\" }
+        if (-not $AnyDrive) {
+            Write-Host "[X] Không tìm thấy USB driver" -ForegroundColor Red
+        }
+        else {
+            Write-Host "[X] Không có driver cho $Model" -ForegroundColor Red
+        }
+        Write-Host ""
+        Read-Host "Press Enter to return to menu"
+        return
+    }
+
+    Write-Host "[*] Driver: $(Split-Path $Msi -Leaf)" -ForegroundColor White
+    Write-Host "[>] Installing silent..." -ForegroundColor Cyan
+
+    # ---------- Cài ----------
+    try {
+        $Proc = Start-Process -FilePath "msiexec.exe" `
+                              -ArgumentList "/i `"$Msi`" /qn /norestart" `
+                              -Wait -PassThru -ErrorAction Stop
+
+        if ($Proc.ExitCode -eq 0) {
+            Write-Host "[+] $Model - SUCCESS" -ForegroundColor Green
+        }
+        elseif ($Proc.ExitCode -eq 3010) {
+            Write-Host "[+] $Model - SUCCESS" -ForegroundColor Green
+            Write-Host "[!] Cần restart máy để hoàn tất" -ForegroundColor Yellow
+        }
+        else {
+            Write-Host "[X] Install failed - Exit code: $($Proc.ExitCode)" -ForegroundColor Red
+        }
+    }
+    catch {
+        Write-Host "[X] Install failed - $($_.Exception.Message)" -ForegroundColor Red
+    }
+
+    Write-Host ""
+    Read-Host "Press Enter to return to menu"
+}
+
+
+# ============================================================
 # QUICK SETUP (ONLINE / OFFLINE)
 # ============================================================
 
@@ -505,7 +752,7 @@ function Start-QuickSetup {
             }
             "SKIPPED" {
                 Write-Host "[=] $($Result.Name)" -ForegroundColor Yellow
-                Write-Host "    Already installed" -ForegroundColor DarkGray
+                Write-Host "    Skipped (already installed / no link)" -ForegroundColor DarkGray
             }
             "FAILED" {
                 Write-Host "[X] $($Result.Name)" -ForegroundColor Red
@@ -554,6 +801,7 @@ while ($true) {
     switch ($Choice) {
         "1" { Start-QuickSetup }            # Online
         "2" { Start-QuickSetup -Offline }   # Offline
+        "3" { Start-SurfaceDriverSetup }    # Surface driver (USB)
         "0" {
             Clear-Host
             Write-Host ""
